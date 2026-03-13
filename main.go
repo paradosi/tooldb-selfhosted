@@ -5,9 +5,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/paradosi/tooldb-selfhosted/internal/db"
 )
 
 func main() {
+	if err := db.Init(); err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
