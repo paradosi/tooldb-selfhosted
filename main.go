@@ -49,6 +49,7 @@ func main() {
 		r.Use(auth.Middleware)
 		r.Get("/auth/me", handleMe)
 		api.ToolRoutes(r)
+		api.BatteryRoutes(r)
 	})
 
 	log.Printf("ToolDB listening on :%s", port)
