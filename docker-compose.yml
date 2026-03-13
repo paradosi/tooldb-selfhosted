@@ -1,0 +1,35 @@
+services:
+  tooldb:
+    build: .
+    # image: ghcr.io/paradosi/tooldb-selfhosted:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_TYPE=sqlite
+      # - AUTH_ENABLED=true
+      # - AUTH_USERNAME=admin
+      # - AUTH_PASSWORD=changeme
+    restart: unless-stopped
+
+# To use Postgres instead of SQLite, uncomment below and set DATABASE_URL:
+#
+#   tooldb:
+#     environment:
+#       - DATABASE_URL=postgres://tooldb:tooldb@db:5432/tooldb
+#     depends_on:
+#       - db
+#
+#   db:
+#     image: postgres:16-alpine
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+#     environment:
+#       - POSTGRES_USER=tooldb
+#       - POSTGRES_PASSWORD=tooldb
+#       - POSTGRES_DB=tooldb
+#     restart: unless-stopped
+#
+# volumes:
+#   pgdata:
