@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, post } from '../lib/api'
 
 const AuthContext = createContext(null)
 
@@ -9,73 +8,53 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null)
-      }
-    )
-
-    return () => subscription.unsubscribe()
+    // Check if we have a stored token
+    const token = localStorage.getItem('tooldb-token')
+    if (token) {
+      // Verify token is still valid
+      get('/auth/me')
+        .then((data) => {
+          setUser(data)
+          setLoading(false)
+        })
+        .catch(() => {
+          localStorage.removeItem('tooldb-token')
+          setUser(null)
+          setLoading(false)
+        })
+    } else {
+      // Try to login without credentials (works when auth is disabled)
+      post('/auth/login', {})
+        .then((data) => {
+          if (data?.token) {
+            localStorage.setItem('tooldb-token', data.token)
+            setUser(data.user)
+          }
+          setLoading(false)
+        })
+        .catch(() => {
+          setLoading(false)
+        })
+    }
   }, [])
 
-  async function signUp(email, password) {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) throw error
-    return data
-  }
-
-  async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-
-    posthog.identify(data.user.id, { email: data.user.email })
-
-    // Check if MFA verification is needed
-    const { data: { totp: factors } } = await supabase.auth.mfa.listFactors()
-    const verifiedFactor = factors?.find((f) => f.status === 'verified')
-    if (verifiedFactor) {
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: verifiedFactor.id,
-      })
-      if (challengeError) throw challengeError
-      const err = new Error('MFA_CHALLENGE_REQUIRED')
-      err.challengeId = { factorId: verifiedFactor.id, challengeId: challenge.id }
-      throw err
+  async function signIn(username, password) {
+    const data = await post('/auth/login', { username, password })
+    if (data?.token) {
+      localStorage.setItem('tooldb-token', data.token)
+      setUser(data.user)
     }
-
     return data
-  }
-
-  async function signInWithProvider(provider) {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.origin,
-      },
-    })
-    if (error) throw error
-  }
-
-  async function resetPassword(email) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/settings`,
-    })
-    if (error) throw error
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    posthog.reset()
+    await post('/auth/logout', {}).catch(() => {})
+    localStorage.removeItem('tooldb-token')
+    setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signInWithProvider, resetPassword, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
