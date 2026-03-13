@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Plus, CheckCircle2, Circle, Archive, RotateCcw, X } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, put, post, del } from '../lib/api'
 import ToolPickerModal from '../components/ToolPickerModal'
 
 export default function KitDetailPage() {
@@ -16,19 +15,13 @@ export default function KitDetailPage() {
   const [togglingId, setTogglingId] = useState(null)
 
   const fetchKit = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('kits')
-      .select('*, kit_tools(id, tool_id, checked, user_tools(id, name, brand, model_number, user_tool_photos(url)))')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) {
+    try {
+      const data = await get('/kits/' + id)
+      setKit(data)
+      setLoading(false)
+    } catch {
       navigate('/kits', { replace: true })
-      return
     }
-
-    setKit(data)
-    setLoading(false)
   }, [id, navigate])
 
   useEffect(() => {
@@ -43,10 +36,7 @@ export default function KitDetailPage() {
 
   async function toggleChecked(kitToolId, currentChecked) {
     setTogglingId(kitToolId)
-    await supabase
-      .from('kit_tools')
-      .update({ checked: !currentChecked })
-      .eq('id', kitToolId)
+    await put('/kit-tools/' + kitToolId, { checked: !currentChecked })
 
     setKit((prev) => ({
       ...prev,
@@ -58,7 +48,7 @@ export default function KitDetailPage() {
   }
 
   async function removeTool(kitToolId) {
-    await supabase.from('kit_tools').delete().eq('id', kitToolId)
+    await del('/kit-tools/' + kitToolId)
     setKit((prev) => ({
       ...prev,
       kit_tools: prev.kit_tools.filter((kt) => kt.id !== kitToolId),
@@ -66,30 +56,18 @@ export default function KitDetailPage() {
   }
 
   async function markComplete() {
-    await supabase
-      .from('kits')
-      .update({ status: 'complete', updated_at: new Date().toISOString() })
-      .eq('id', id)
-    posthog.capture('kit_completed', {
-      kit_id: id,
-      kit_name: kit.name,
-      kit_type: kit.type,
-      tool_count: tools.length,
-    })
+    await put('/kits/' + id, { status: 'complete' })
     setKit((prev) => ({ ...prev, status: 'complete' }))
   }
 
   async function reactivate() {
-    await supabase
-      .from('kits')
-      .update({ status: 'active', updated_at: new Date().toISOString() })
-      .eq('id', id)
+    await put('/kits/' + id, { status: 'active' })
     setKit((prev) => ({ ...prev, status: 'active' }))
   }
 
   async function handleDelete() {
     setDeleting(true)
-    await supabase.from('kits').delete().eq('id', id)
+    await del('/kits/' + id)
     navigate('/kits', { replace: true })
   }
 

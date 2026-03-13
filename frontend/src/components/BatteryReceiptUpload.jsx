@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react'
 import { FileText, Image, Trash2, Upload, Loader2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { uploadFile } from '../lib/upload'
-import { useAuth } from '../contexts/AuthContext'
+import { get, del, upload } from '../lib/api'
 
 const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Other']
 
 export default function BatteryReceiptUpload({ batteryId }) {
-  const { user } = useAuth()
   const [receipts, setReceipts] = useState([])
   const [uploading, setUploading] = useState(false)
   const [label, setLabel] = useState('Purchase receipt')
@@ -19,13 +16,10 @@ export default function BatteryReceiptUpload({ batteryId }) {
   }, [batteryId])
 
   async function loadReceipts() {
-    const { data } = await supabase
-      .from('user_battery_receipts')
-      .select('*')
-      .eq('user_battery_id', batteryId)
-      .order('uploaded_at', { ascending: true })
-
-    if (data) setReceipts(data)
+    try {
+      const data = await get('/batteries/' + batteryId + '/receipts')
+      if (data) setReceipts(data)
+    } catch {}
   }
 
   const MAX_SIZE = 10 * 1024 * 1024
@@ -45,20 +39,7 @@ export default function BatteryReceiptUpload({ batteryId }) {
       if (file.size > MAX_SIZE) {
         throw new Error('File must be under 10 MB.')
       }
-      const url = await uploadFile(file, user.id, batteryId, 'receipts')
-
-      const { error: insertErr } = await supabase
-        .from('user_battery_receipts')
-        .insert({
-          user_battery_id: batteryId,
-          user_id: user.id,
-          url,
-          file_type: file.type || 'image/jpeg',
-          label,
-        })
-
-      if (insertErr) throw new Error(insertErr.message)
-
+      await upload('/batteries/' + batteryId + '/receipts?label=' + encodeURIComponent(label), file)
       await loadReceipts()
     } catch (err) {
       setError(err.message)
@@ -69,11 +50,7 @@ export default function BatteryReceiptUpload({ batteryId }) {
   }
 
   async function deleteReceipt(receiptId) {
-    await supabase
-      .from('user_battery_receipts')
-      .delete()
-      .eq('id', receiptId)
-
+    await del('/receipts/' + receiptId)
     await loadReceipts()
   }
 

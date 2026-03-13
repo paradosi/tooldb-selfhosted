@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, FileText, Image, BookOpen, Wrench, Youtube, ExternalLink, UserCheck, Copy, HandHelping, Undo2, ShieldAlert, Package } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, put, post, del } from '../lib/api'
 import PhotoGallery from '../components/PhotoGallery'
 import MaintenanceTimeline from '../components/MaintenanceTimeline'
 import AddMaintenanceForm from '../components/AddMaintenanceForm'
@@ -22,19 +21,13 @@ export default function ToolDetailPage() {
   const [showKitModal, setShowKitModal] = useState(false)
 
   const fetchTool = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('user_tools')
-      .select('*, user_tool_photos(*), user_tool_receipts(*), user_maintenance_logs(*), user_tool_tags(tag_id, user_tags(id, name, color)), tools:catalog_tool_id(tool_images(url, is_primary))')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) {
+    try {
+      const data = await get('/tools/' + id)
+      setTool(data)
+      setLoading(false)
+    } catch {
       navigate('/', { replace: true })
-      return
     }
-
-    setTool(data)
-    setLoading(false)
   }, [id, navigate])
 
   useEffect(() => {
@@ -43,24 +36,14 @@ export default function ToolDetailPage() {
 
   async function handleDelete() {
     setDeleting(true)
-    await supabase.from('user_tools').delete().eq('id', id)
-    posthog.capture('tool_deleted', {
-      tool_id: id,
-      tool_name: tool.name,
-      tool_brand: tool.brand,
-      tool_type: tool.tool_type,
-    })
+    await del('/tools/' + id)
     navigate('/', { replace: true })
   }
 
   async function handleDuplicate() {
     setDuplicating(true)
-    const { data, error } = await supabase
-      .from('user_tools')
-      .insert({
-        user_id: tool.user_id,
-        catalog_tool_id: tool.catalog_tool_id,
-        upc: tool.upc,
+    try {
+      const data = await post('/tools', {
         name: tool.name,
         brand: tool.brand,
         model_number: tool.model_number,
@@ -78,35 +61,17 @@ export default function ToolDetailPage() {
         custom_field_2_label: tool.custom_field_2_label,
         custom_field_2_value: tool.custom_field_2_value,
       })
-      .select()
-      .single()
-
-    if (!error && data) {
-      posthog.capture('tool_duplicated', {
-        original_tool_id: id,
-        new_tool_id: data.id,
-        tool_name: tool.name,
-        tool_brand: tool.brand,
-        tool_type: tool.tool_type,
-      })
-      navigate(`/tools/${data.id}/edit`)
-    }
+      if (data?.id) {
+        navigate(`/tools/${data.id}/edit`)
+      }
+    } catch {}
     setDuplicating(false)
   }
 
   async function handleLend() {
     if (!lendName.trim()) return
     setLending(true)
-    await supabase
-      .from('user_tools')
-      .update({ lent_to: lendName.trim(), lent_date: new Date().toISOString().slice(0, 10) })
-      .eq('id', id)
-    posthog.capture('tool_lent', {
-      tool_id: id,
-      tool_name: tool.name,
-      tool_brand: tool.brand,
-      tool_type: tool.tool_type,
-    })
+    await put('/tools/' + id, { lent_to: lendName.trim(), lent_date: new Date().toISOString().slice(0, 10) })
     setShowLendModal(false)
     setLendName('')
     setLending(false)
@@ -114,16 +79,7 @@ export default function ToolDetailPage() {
   }
 
   async function handleReturn() {
-    await supabase
-      .from('user_tools')
-      .update({ lent_to: null, lent_date: null })
-      .eq('id', id)
-    posthog.capture('tool_returned', {
-      tool_id: id,
-      tool_name: tool.name,
-      tool_brand: tool.brand,
-      tool_type: tool.tool_type,
-    })
+    await put('/tools/' + id, { lent_to: null, lent_date: null })
     fetchTool()
   }
 
@@ -230,17 +186,9 @@ export default function ToolDetailPage() {
       </div>
 
       {/* Photos */}
-      {tool.user_tool_photos?.length > 0 ? (
+      {tool.user_tool_photos?.length > 0 && (
         <div className="mb-6">
           <PhotoGallery photos={tool.user_tool_photos} />
-        </div>
-      ) : tool.tools?.tool_images?.length > 0 && (
-        <div className="mb-6">
-          <img
-            src={(tool.tools.tool_images.find((p) => p.is_primary) || tool.tools.tool_images[0]).url}
-            alt={tool.name}
-            className="w-full max-w-md rounded-xl object-contain bg-surface border border-bd"
-          />
         </div>
       )}
 

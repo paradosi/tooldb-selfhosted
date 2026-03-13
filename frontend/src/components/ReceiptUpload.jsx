@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react'
 import { FileText, Image, Trash2, Upload, Loader2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { uploadFile } from '../lib/upload'
-import { useAuth } from '../contexts/AuthContext'
+import { get, del, upload } from '../lib/api'
 
 const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Other']
 
 export default function ReceiptUpload({ toolId }) {
-  const { user } = useAuth()
   const [receipts, setReceipts] = useState([])
   const [uploading, setUploading] = useState(false)
   const [label, setLabel] = useState('Purchase receipt')
@@ -19,13 +16,10 @@ export default function ReceiptUpload({ toolId }) {
   }, [toolId])
 
   async function loadReceipts() {
-    const { data } = await supabase
-      .from('user_tool_receipts')
-      .select('*')
-      .eq('user_tool_id', toolId)
-      .order('uploaded_at', { ascending: true })
-
-    if (data) setReceipts(data)
+    try {
+      const data = await get('/tools/' + toolId + '/receipts')
+      if (data) setReceipts(data)
+    } catch {}
   }
 
   const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -45,20 +39,8 @@ export default function ReceiptUpload({ toolId }) {
       if (file.size > MAX_SIZE) {
         throw new Error('File must be under 10 MB.')
       }
-      const url = await uploadFile(file, user.id, toolId, 'receipts')
-
-      const { error: insertErr } = await supabase
-        .from('user_tool_receipts')
-        .insert({
-          user_tool_id: toolId,
-          user_id: user.id,
-          url,
-          file_type: file.type || 'image/jpeg',
-          label,
-        })
-
-      if (insertErr) throw new Error(insertErr.message)
-
+      // Upload receipt with label as query param
+      await upload('/tools/' + toolId + '/receipts?label=' + encodeURIComponent(label), file)
       await loadReceipts()
     } catch (err) {
       setError(err.message)
@@ -69,11 +51,7 @@ export default function ReceiptUpload({ toolId }) {
   }
 
   async function deleteReceipt(receiptId) {
-    await supabase
-      .from('user_tool_receipts')
-      .delete()
-      .eq('id', receiptId)
-
+    await del('/receipts/' + receiptId)
     await loadReceipts()
   }
 

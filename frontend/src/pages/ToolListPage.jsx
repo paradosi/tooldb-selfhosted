@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { PlusCircle, Wrench, Search, X, LayoutList, LayoutGrid, Upload, UserCheck } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import useUserTools from '../hooks/useUserTools'
 import ToolCard from '../components/ToolCard'
 
@@ -11,9 +10,6 @@ export default function ToolListPage() {
   const [brand, setBrand] = useState('')
   const [location, setLocation] = useState('')
   const [toolType, setToolType] = useState('')
-  const [brands, setBrands] = useState([])
-  const [locations, setLocations] = useState([])
-  const [toolTypes, setToolTypes] = useState([])
   const [lentOnly, setLentOnly] = useState(false)
   const [view, setView] = useState(() => localStorage.getItem('tooldb-view') || 'list')
   const timerRef = useRef(null)
@@ -40,45 +36,20 @@ export default function ToolListPage() {
     return () => clearTimeout(timerRef.current)
   }, [search])
 
-  // Load distinct brands and locations for filters
-  useEffect(() => {
-    async function loadFilters() {
-      const [brandRes, locRes, typeRes] = await Promise.all([
-        supabase
-          .from('user_tools')
-          .select('brand')
-          .not('brand', 'is', null)
-          .not('brand', 'eq', '')
-          .order('brand')
-          .limit(10000),
-        supabase
-          .from('user_tools')
-          .select('location')
-          .not('location', 'is', null)
-          .not('location', 'eq', '')
-          .order('location')
-          .limit(10000),
-        supabase
-          .from('user_tools')
-          .select('tool_type')
-          .not('tool_type', 'is', null)
-          .not('tool_type', 'eq', '')
-          .order('tool_type')
-          .limit(10000),
-      ])
+  // Derive filter options from loaded tools
+  const brands = useMemo(() => {
+    const set = new Set(tools.map((t) => t.brand).filter(Boolean))
+    return [...set].sort()
+  }, [tools])
 
-      if (brandRes.data) {
-        setBrands([...new Set(brandRes.data.map((r) => r.brand))])
-      }
-      if (locRes.data) {
-        setLocations([...new Set(locRes.data.map((r) => r.location))])
-      }
-      if (typeRes.data) {
-        setToolTypes([...new Set(typeRes.data.map((r) => r.tool_type))])
-      }
-    }
+  const locations = useMemo(() => {
+    const set = new Set(tools.map((t) => t.location).filter(Boolean))
+    return [...set].sort()
+  }, [tools])
 
-    loadFilters()
+  const toolTypes = useMemo(() => {
+    const set = new Set(tools.map((t) => t.tool_type).filter(Boolean))
+    return [...set].sort()
   }, [tools])
 
   const hasFilters = search || brand || location || toolType || lentOnly

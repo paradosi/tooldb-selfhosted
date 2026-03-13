@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Camera, Star, Trash2, Loader2, RotateCw } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { uploadFile } from '../lib/upload'
-import { useAuth } from '../contexts/AuthContext'
+import { get, put, del, upload } from '../lib/api'
 
 export default function PhotoUpload({ toolId }) {
-  const { user } = useAuth()
   const [photos, setPhotos] = useState([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
@@ -16,13 +13,10 @@ export default function PhotoUpload({ toolId }) {
   }, [toolId])
 
   async function loadPhotos() {
-    const { data } = await supabase
-      .from('user_tool_photos')
-      .select('*')
-      .eq('user_tool_id', toolId)
-      .order('uploaded_at', { ascending: true })
-
-    if (data) setPhotos(data)
+    try {
+      const data = await get('/tools/' + toolId + '/photos')
+      if (data) setPhotos(data)
+    } catch {}
   }
 
   const MAX_PHOTOS = 5
@@ -53,19 +47,7 @@ export default function PhotoUpload({ toolId }) {
         if (file.size > MAX_SIZE) {
           throw new Error(`${file.name}: File must be under 10 MB.`)
         }
-        const url = await uploadFile(file, user.id, toolId, 'photos')
-
-        const isPrimary = photos.length === 0
-        const { error: insertErr } = await supabase
-          .from('user_tool_photos')
-          .insert({
-            user_tool_id: toolId,
-            user_id: user.id,
-            url,
-            is_primary: isPrimary,
-          })
-
-        if (insertErr) throw new Error(insertErr.message)
+        await upload('/tools/' + toolId + '/photos', file)
       }
 
       await loadPhotos()
@@ -78,36 +60,18 @@ export default function PhotoUpload({ toolId }) {
   }
 
   async function setPrimary(photoId) {
-    // Unset all, then set the selected one
-    await supabase
-      .from('user_tool_photos')
-      .update({ is_primary: false })
-      .eq('user_tool_id', toolId)
-
-    await supabase
-      .from('user_tool_photos')
-      .update({ is_primary: true })
-      .eq('id', photoId)
-
+    await put('/photos/' + photoId, { is_primary: true })
     await loadPhotos()
   }
 
   async function rotatePhoto(photoId, currentRotation) {
     const next = (currentRotation + 90) % 360
-    await supabase
-      .from('user_tool_photos')
-      .update({ rotation: next })
-      .eq('id', photoId)
-
+    await put('/photos/' + photoId, { rotation: next })
     await loadPhotos()
   }
 
   async function deletePhoto(photoId) {
-    await supabase
-      .from('user_tool_photos')
-      .delete()
-      .eq('id', photoId)
-
+    await del('/photos/' + photoId)
     await loadPhotos()
   }
 

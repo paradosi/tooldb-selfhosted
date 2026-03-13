@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FileText, FileSpreadsheet, Loader2 } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { exportPdf } from '../lib/exportPdf'
 import { exportCsv } from '../lib/exportCsv'
@@ -14,33 +13,13 @@ export default function ExportPage() {
   const [exporting, setExporting] = useState(null)
 
   useEffect(() => {
-    async function fetchAll(table) {
-      const PAGE = 1000
-      let all = []
-      let from = 0
-      while (true) {
-        const { data } = await supabase
-          .from(table)
-          .select('*')
-          .order('brand', { ascending: true })
-          .order('name', { ascending: true })
-          .range(from, from + PAGE - 1)
-        if (!data || data.length === 0) break
-        all = all.concat(data)
-        if (data.length < PAGE) break
-        from += PAGE
-      }
-      return all
-    }
-
     async function load() {
       const [toolData, batteryData] = await Promise.all([
-        fetchAll('user_tools'),
-        fetchAll('user_batteries'),
+        get('/tools'),
+        get('/batteries'),
       ])
-
-      setTools(toolData)
-      setBatteries(batteryData)
+      setTools(toolData || [])
+      setBatteries(batteryData || [])
       setLoading(false)
     }
 
@@ -55,13 +34,7 @@ export default function ExportPage() {
     setExporting('pdf')
     try {
       const batteryItems = batteries.map((b) => ({ ...b, tool_type: `Battery${b.voltage ? ' (' + b.voltage + ')' : ''}` }))
-      await exportPdf([...tools, ...batteryItems], user?.email)
-      posthog.capture('export_downloaded', {
-        export_format: 'pdf',
-        tool_count: tools.length,
-        battery_count: batteries.length,
-        total_items: tools.length + batteries.length,
-      })
+      await exportPdf([...tools, ...batteryItems], user?.username)
     } finally {
       setExporting(null)
     }
@@ -72,12 +45,6 @@ export default function ExportPage() {
     try {
       const batteryItems = batteries.map((b) => ({ ...b, tool_type: `Battery${b.voltage ? ' (' + b.voltage + ')' : ''}` }))
       exportCsv([...tools, ...batteryItems])
-      posthog.capture('export_downloaded', {
-        export_format: 'csv',
-        tool_count: tools.length,
-        battery_count: batteries.length,
-        total_items: tools.length + batteries.length,
-      })
     } finally {
       setExporting(null)
     }

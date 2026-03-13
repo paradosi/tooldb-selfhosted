@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Check, Plus, Package, Briefcase } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { get, post, del } from '../lib/api'
 
 export default function AddToKitModal({ toolId, onClose }) {
   const [kits, setKits] = useState([])
@@ -10,20 +10,14 @@ export default function AddToKitModal({ toolId, onClose }) {
 
   useEffect(() => {
     async function load() {
-      const [kitsRes, memberRes] = await Promise.all([
-        supabase
-          .from('kits')
-          .select('id, name, type, status')
-          .eq('status', 'active')
-          .order('updated_at', { ascending: false }),
-        supabase
-          .from('kit_tools')
-          .select('kit_id')
-          .eq('tool_id', toolId),
-      ])
-
-      setKits(kitsRes.data || [])
-      setMemberOf(new Set((memberRes.data || []).map((r) => r.kit_id)))
+      try {
+        const [kitsData, memberData] = await Promise.all([
+          get('/kits'),
+          get('/tools/' + toolId + '/kits'),
+        ])
+        setKits((kitsData || []).filter((k) => k.status === 'active'))
+        setMemberOf(new Set((memberData || []).map((r) => r.kit_id)))
+      } catch {}
       setLoading(false)
     }
     load()
@@ -32,20 +26,14 @@ export default function AddToKitModal({ toolId, onClose }) {
   async function toggleKit(kitId) {
     setSaving(kitId)
     if (memberOf.has(kitId)) {
-      await supabase
-        .from('kit_tools')
-        .delete()
-        .eq('kit_id', kitId)
-        .eq('tool_id', toolId)
+      await del('/kits/' + kitId + '/tools/' + toolId)
       setMemberOf((prev) => {
         const next = new Set(prev)
         next.delete(kitId)
         return next
       })
     } else {
-      await supabase
-        .from('kit_tools')
-        .insert({ kit_id: kitId, tool_id: toolId })
+      await post('/kits/' + kitId + '/tools', { tool_id: toolId })
       setMemberOf((prev) => new Set(prev).add(kitId))
     }
     setSaving(null)

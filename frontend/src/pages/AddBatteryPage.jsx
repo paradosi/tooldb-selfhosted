@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Save, ArrowLeft, Check, Loader2 } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, post, put } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import useAutosave from '../hooks/useAutosave'
 import BatteryPhotoUpload from '../components/BatteryPhotoUpload'
@@ -47,7 +46,6 @@ export default function AddBatteryPage() {
 
   function buildRecord() {
     return {
-      user_id: user.id,
       name: form.name,
       brand: form.brand || null,
       platform: form.platform || null,
@@ -73,12 +71,13 @@ export default function AddBatteryPage() {
 
   const handleServerAutosave = useCallback(async () => {
     if (!id || !form.name) return {}
-    const result = await supabase
-      .from('user_batteries')
-      .update(buildRecord())
-      .eq('id', id)
-    return result
-  }, [form, id, user.id])
+    try {
+      await put('/batteries/' + id, buildRecord())
+      return {}
+    } catch (err) {
+      return { error: err }
+    }
+  }, [form, id])
 
   const { autoSaveStatus, clearDraft, loadDraft } = useAutosave(
     'tooldb-draft-battery',
@@ -98,42 +97,36 @@ export default function AddBatteryPage() {
     if (!isEdit) return
 
     async function loadBattery() {
-      const { data, error: err } = await supabase
-        .from('user_batteries')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      if (err) {
+      try {
+        const data = await get('/batteries/' + id)
+        setForm({
+          name: data.name || '',
+          brand: data.brand || '',
+          platform: data.platform || '',
+          model_number: data.model_number || '',
+          serial_number: data.serial_number || '',
+          voltage: data.voltage || '',
+          capacity_ah: data.capacity_ah || '',
+          purchase_date: data.purchase_date || '',
+          purchase_price: data.purchase_price ?? '',
+          retailer: data.retailer || '',
+          warranty_expiry: data.warranty_expiry || '',
+          condition: data.condition || 'New',
+          location: data.location || '',
+          lent_to: data.lent_to || '',
+          lent_date: data.lent_date || '',
+          notes: data.notes || '',
+          custom_field_1_label: data.custom_field_1_label || '',
+          custom_field_1_value: data.custom_field_1_value || '',
+          custom_field_2_label: data.custom_field_2_label || '',
+          custom_field_2_value: data.custom_field_2_value || '',
+        })
+        setLoadingBattery(false)
+        setFormReady(true)
+      } catch {
         setError('Battery not found.')
         setLoadingBattery(false)
-        return
       }
-
-      setForm({
-        name: data.name || '',
-        brand: data.brand || '',
-        platform: data.platform || '',
-        model_number: data.model_number || '',
-        serial_number: data.serial_number || '',
-        voltage: data.voltage || '',
-        capacity_ah: data.capacity_ah || '',
-        purchase_date: data.purchase_date || '',
-        purchase_price: data.purchase_price ?? '',
-        retailer: data.retailer || '',
-        warranty_expiry: data.warranty_expiry || '',
-        condition: data.condition || 'New',
-        location: data.location || '',
-        lent_to: data.lent_to || '',
-        lent_date: data.lent_date || '',
-        notes: data.notes || '',
-        custom_field_1_label: data.custom_field_1_label || '',
-        custom_field_1_value: data.custom_field_1_value || '',
-        custom_field_2_label: data.custom_field_2_label || '',
-        custom_field_2_value: data.custom_field_2_value || '',
-      })
-      setLoadingBattery(false)
-      setFormReady(true)
     }
 
     loadBattery()
@@ -141,17 +134,13 @@ export default function AddBatteryPage() {
 
   useEffect(() => {
     async function loadLocations() {
-      const { data } = await supabase
-        .from('user_batteries')
-        .select('location')
-        .not('location', 'is', null)
-        .not('location', 'eq', '')
-        .order('location')
-
-      if (data) {
-        const unique = [...new Set(data.map((r) => r.location))]
-        setLocations(unique)
-      }
+      try {
+        const batteries = await get('/batteries')
+        if (batteries) {
+          const unique = [...new Set(batteries.map((b) => b.location).filter(Boolean))].sort()
+          setLocations(unique)
+        }
+      } catch {}
     }
 
     loadLocations()
@@ -168,48 +157,25 @@ export default function AddBatteryPage() {
     setSaving(true)
 
     const record = buildRecord()
-    let result
-    if (isEdit) {
-      result = await supabase
-        .from('user_batteries')
-        .update(record)
-        .eq('id', id)
-        .select()
-        .single()
-    } else {
-      result = await supabase
-        .from('user_batteries')
-        .insert(record)
-        .select()
-        .single()
-    }
+    try {
+      let data
+      if (isEdit) {
+        data = await put('/batteries/' + id, record)
+      } else {
+        data = await post('/batteries', record)
+      }
 
-    if (result.error) {
-      setError(result.error.message)
       setSaving(false)
-      return
-    }
+      clearDraft()
 
-    setSaving(false)
-    clearDraft()
-
-    if (isEdit) {
-      posthog.capture('battery_updated', {
-        battery_id: result.data.id,
-        battery_name: form.name,
-        battery_brand: form.brand,
-        battery_platform: form.platform,
-      })
-      navigate(`/batteries/${result.data.id}`)
-    } else {
-      posthog.capture('battery_created', {
-        battery_id: result.data.id,
-        battery_name: form.name,
-        battery_brand: form.brand,
-        battery_platform: form.platform,
-        battery_voltage: form.voltage,
-      })
-      navigate(`/batteries/${result.data.id}/edit`, { replace: true })
+      if (isEdit) {
+        navigate(`/batteries/${data?.id || id}`)
+      } else {
+        navigate(`/batteries/${data.id}/edit`, { replace: true })
+      }
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
     }
   }
 
@@ -338,7 +304,7 @@ export default function AddBatteryPage() {
         {isEdit && (
           <div className="bg-card border border-bd rounded-xl p-6 space-y-4">
             <h2 className="text-sm font-medium text-fg-muted uppercase tracking-wider">Tags</h2>
-            <TagPicker itemId={id} table="user_battery_tags" foreignKey="user_battery_id" />
+            <TagPicker itemId={id} itemType="battery" />
           </div>
         )}
 

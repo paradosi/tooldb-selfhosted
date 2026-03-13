@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import { Upload, FileSpreadsheet, Loader2, CheckCircle, AlertTriangle } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { post } from '../lib/api'
 import { parseCsv } from '../lib/importCsv'
 
 export default function ImportCSV({ onComplete }) {
-  const { user } = useAuth()
   const [preview, setPreview] = useState(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
@@ -37,30 +34,21 @@ export default function ImportCSV({ onComplete }) {
     setImporting(true)
     setError(null)
 
-    const records = preview.map((tool) => ({
-      user_id: user.id,
-      ...tool,
-    }))
-
-    const { data, error: err } = await supabase
-      .from('user_tools')
-      .insert(records)
-      .select('id')
-
-    if (err) {
-      setError(err.message)
-      setImporting(false)
-      return
+    let imported = 0
+    try {
+      for (const tool of preview) {
+        await post('/tools', tool)
+        imported++
+      }
+      setResult({ count: imported })
+      setPreview(null)
+    } catch (err) {
+      setError(err.message + (imported > 0 ? ` (${imported} imported before error)` : ''))
     }
 
-    posthog.capture('csv_imported', {
-      tool_count: data.length,
-    })
-    setResult({ count: data.length })
-    setPreview(null)
     setImporting(false)
 
-    if (onComplete) {
+    if (onComplete && imported > 0) {
       setTimeout(onComplete, 1500)
     }
   }

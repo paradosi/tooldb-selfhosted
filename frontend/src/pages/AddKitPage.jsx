@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, post, put } from '../lib/api'
 
 export default function AddKitPage() {
   const { id } = useParams()
@@ -20,14 +19,12 @@ export default function AddKitPage() {
   useEffect(() => {
     if (!isEdit) return
     async function load() {
-      const { data } = await supabase
-        .from('kits')
-        .select('name, description, type')
-        .eq('id', id)
-        .single()
-      if (data) {
-        setForm({ name: data.name, description: data.description || '', type: data.type })
-      }
+      try {
+        const data = await get('/kits/' + id)
+        if (data) {
+          setForm({ name: data.name, description: data.description || '', type: data.type })
+        }
+      } catch {}
       setLoading(false)
     }
     load()
@@ -38,27 +35,17 @@ export default function AddKitPage() {
     if (!form.name.trim()) return
     setSaving(true)
 
-    if (isEdit) {
-      await supabase
-        .from('kits')
-        .update({ name: form.name.trim(), description: form.description.trim() || null, updated_at: new Date().toISOString() })
-        .eq('id', id)
-      navigate(`/kits/${id}`)
-    } else {
-      const { data } = await supabase
-        .from('kits')
-        .insert({ name: form.name.trim(), description: form.description.trim() || null, type: form.type })
-        .select()
-        .single()
-      if (data) {
-        posthog.capture('kit_created', {
-          kit_id: data.id,
-          kit_name: form.name.trim(),
-          kit_type: form.type,
-        })
-        navigate(`/kits/${data.id}`)
+    try {
+      if (isEdit) {
+        await put('/kits/' + id, { name: form.name.trim(), description: form.description.trim() || null })
+        navigate(`/kits/${id}`)
+      } else {
+        const data = await post('/kits', { name: form.name.trim(), description: form.description.trim() || null, type: form.type })
+        if (data?.id) {
+          navigate(`/kits/${data.id}`)
+        }
       }
-    }
+    } catch {}
     setSaving(false)
   }
 

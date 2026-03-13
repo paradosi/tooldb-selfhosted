@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Save, ArrowLeft, Check, Loader2 } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
+import { get, post, put } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import useAutosave from '../hooks/useAutosave'
-import CatalogSearch from '../components/CatalogSearch'
 import UpcScanner from '../components/UpcScanner'
 import PhotoUpload from '../components/PhotoUpload'
 import ReceiptUpload from '../components/ReceiptUpload'
@@ -27,7 +25,6 @@ const TOOL_TYPES = [
 ]
 
 const EMPTY_FORM = {
-  catalog_tool_id: null,
   upc: '',
   name: '',
   brand: '',
@@ -65,8 +62,6 @@ export default function AddToolPage() {
 
   function buildRecord() {
     return {
-      user_id: user.id,
-      catalog_tool_id: form.catalog_tool_id || null,
       upc: form.upc || null,
       name: form.name,
       brand: form.brand || null,
@@ -91,12 +86,13 @@ export default function AddToolPage() {
 
   const handleServerAutosave = useCallback(async () => {
     if (!id || !form.name) return {}
-    const result = await supabase
-      .from('user_tools')
-      .update(buildRecord())
-      .eq('id', id)
-    return result
-  }, [form, id, user.id])
+    try {
+      await put('/tools/' + id, buildRecord())
+      return {}
+    } catch (err) {
+      return { error: err }
+    }
+  }, [form, id])
 
   const { autoSaveStatus, clearDraft, loadDraft } = useAutosave(
     'tooldb-draft-tool',
@@ -117,42 +113,35 @@ export default function AddToolPage() {
     if (!isEdit) return
 
     async function loadTool() {
-      const { data, error: err } = await supabase
-        .from('user_tools')
-        .select('*')
-        .eq('id', id)
-        .single()
-
-      if (err) {
+      try {
+        const data = await get('/tools/' + id)
+        setForm({
+          upc: data.upc || '',
+          name: data.name || '',
+          brand: data.brand || '',
+          model_number: data.model_number || '',
+          serial_number: data.serial_number || '',
+          tool_type: data.tool_type || '',
+          purchase_date: data.purchase_date || '',
+          purchase_price: data.purchase_price ?? '',
+          retailer: data.retailer || '',
+          warranty_expiry: data.warranty_expiry || '',
+          condition: data.condition || 'New',
+          location: data.location || '',
+          lent_to: data.lent_to || '',
+          lent_date: data.lent_date || '',
+          notes: data.notes || '',
+          custom_field_1_label: data.custom_field_1_label || '',
+          custom_field_1_value: data.custom_field_1_value || '',
+          custom_field_2_label: data.custom_field_2_label || '',
+          custom_field_2_value: data.custom_field_2_value || '',
+        })
+        setLoadingTool(false)
+        setFormReady(true)
+      } catch {
         setError('Tool not found.')
         setLoadingTool(false)
-        return
       }
-
-      setForm({
-        catalog_tool_id: data.catalog_tool_id,
-        upc: data.upc || '',
-        name: data.name || '',
-        brand: data.brand || '',
-        model_number: data.model_number || '',
-        serial_number: data.serial_number || '',
-        tool_type: data.tool_type || '',
-        purchase_date: data.purchase_date || '',
-        purchase_price: data.purchase_price ?? '',
-        retailer: data.retailer || '',
-        warranty_expiry: data.warranty_expiry || '',
-        condition: data.condition || 'New',
-        location: data.location || '',
-        lent_to: data.lent_to || '',
-        lent_date: data.lent_date || '',
-        notes: data.notes || '',
-        custom_field_1_label: data.custom_field_1_label || '',
-        custom_field_1_value: data.custom_field_1_value || '',
-        custom_field_2_label: data.custom_field_2_label || '',
-        custom_field_2_value: data.custom_field_2_value || '',
-      })
-      setLoadingTool(false)
-      setFormReady(true)
     }
 
     loadTool()
@@ -161,29 +150,16 @@ export default function AddToolPage() {
   // Load distinct locations and custom tool types for autocomplete
   useEffect(() => {
     async function loadAutocomplete() {
-      const [locResult, typeResult] = await Promise.all([
-        supabase
-          .from('user_tools')
-          .select('location')
-          .not('location', 'is', null)
-          .not('location', 'eq', '')
-          .order('location'),
-        supabase
-          .from('user_tools')
-          .select('tool_type')
-          .not('tool_type', 'is', null)
-          .not('tool_type', 'eq', '')
-          .order('tool_type'),
-      ])
-
-      if (locResult.data) {
-        setLocations([...new Set(locResult.data.map((r) => r.location))])
-      }
-      if (typeResult.data) {
-        const userTypes = typeResult.data.map((r) => r.tool_type)
-        const merged = [...new Set([...TOOL_TYPES, ...userTypes])].sort()
-        setAllToolTypes(merged)
-      }
+      try {
+        const tools = await get('/tools')
+        if (tools) {
+          const locs = [...new Set(tools.map((t) => t.location).filter(Boolean))].sort()
+          setLocations(locs)
+          const userTypes = tools.map((t) => t.tool_type).filter(Boolean)
+          const merged = [...new Set([...TOOL_TYPES, ...userTypes])].sort()
+          setAllToolTypes(merged)
+        }
+      } catch {}
     }
 
     loadAutocomplete()
@@ -194,26 +170,10 @@ export default function AddToolPage() {
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
-  function handleCatalogSelect(catalogTool) {
-    setForm((prev) => ({
-      ...prev,
-      catalog_tool_id: catalogTool.catalog_tool_id,
-      name: catalogTool.name,
-      brand: catalogTool.brand,
-      model_number: catalogTool.model_number,
-    }))
-  }
-
   function handleUpcResult(result) {
     setForm((prev) => ({
       ...prev,
       upc: result.upc,
-      ...(result.catalog_tool_id && {
-        catalog_tool_id: result.catalog_tool_id,
-        name: result.name,
-        brand: result.brand,
-        model_number: result.model_number,
-      }),
     }))
   }
 
@@ -223,48 +183,25 @@ export default function AddToolPage() {
     setSaving(true)
 
     const record = buildRecord()
-    let result
-    if (isEdit) {
-      result = await supabase
-        .from('user_tools')
-        .update(record)
-        .eq('id', id)
-        .select()
-        .single()
-    } else {
-      result = await supabase
-        .from('user_tools')
-        .insert(record)
-        .select()
-        .single()
-    }
+    try {
+      let data
+      if (isEdit) {
+        data = await put('/tools/' + id, record)
+      } else {
+        data = await post('/tools', record)
+      }
 
-    if (result.error) {
-      setError(result.error.message)
       setSaving(false)
-      return
-    }
+      clearDraft()
 
-    setSaving(false)
-    clearDraft()
-
-    if (isEdit) {
-      posthog.capture('tool_updated', {
-        tool_id: result.data.id,
-        tool_name: form.name,
-        tool_brand: form.brand,
-        tool_type: form.tool_type,
-      })
-      navigate(`/tools/${result.data.id}`)
-    } else {
-      posthog.capture('tool_created', {
-        tool_id: result.data.id,
-        tool_name: form.name,
-        tool_brand: form.brand,
-        tool_type: form.tool_type,
-        from_catalog: Boolean(form.catalog_tool_id),
-      })
-      navigate(`/tools/${result.data.id}/edit`, { replace: true })
+      if (isEdit) {
+        navigate(`/tools/${data?.id || id}`)
+      } else {
+        navigate(`/tools/${data.id}/edit`, { replace: true })
+      }
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
     }
   }
 
@@ -292,16 +229,11 @@ export default function AddToolPage() {
 
       {!isEdit && (
         <div className="mb-6 space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <CatalogSearch onSelect={handleCatalogSelect} />
-            </div>
-            <div className="flex items-end">
-              <UpcScanner onResult={handleUpcResult} />
-            </div>
+          <div className="flex items-end">
+            <UpcScanner onResult={handleUpcResult} />
           </div>
           <p className="text-xs text-fg-faint">
-            Search the catalog, scan a barcode, or enter details manually below.
+            Scan a barcode or enter details manually below.
           </p>
           <ImportCSV onComplete={() => navigate('/')} />
         </div>
@@ -422,7 +354,7 @@ export default function AddToolPage() {
         {isEdit && (
           <div className="bg-card border border-bd rounded-xl p-6 space-y-4">
             <h2 className="text-sm font-medium text-fg-muted uppercase tracking-wider">Tags</h2>
-            <TagPicker itemId={id} table="user_tool_tags" foreignKey="user_tool_id" />
+            <TagPicker itemId={id} itemType="tool" />
           </div>
         )}
 

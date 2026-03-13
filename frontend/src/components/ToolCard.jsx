@@ -3,11 +3,7 @@ import { Wrench, UserCheck } from 'lucide-react'
 
 export default function ToolCard({ tool, view = 'list' }) {
   const primaryPhoto = tool.user_tool_photos?.find((p) => p.is_primary)
-  const userPhoto = primaryPhoto || tool.user_tool_photos?.[0]
-  // Fall back to catalog image if no user photos
-  const catalogImages = tool.tools?.tool_images
-  const catalogPhoto = catalogImages?.find((p) => p.is_primary) || catalogImages?.[0]
-  const anyPhoto = userPhoto || (catalogPhoto ? { url: catalogPhoto.url } : null)
+  const anyPhoto = primaryPhoto || tool.user_tool_photos?.[0] || null
 
   if (view === 'grid') {
     return (

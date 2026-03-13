@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Search, Check } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { get, post } from '../lib/api'
 
 export default function ToolPickerModal({ kitId, existingToolIds = [], onClose, onAdded }) {
   const [search, setSearch] = useState('')
@@ -18,18 +18,15 @@ export default function ToolPickerModal({ kitId, existingToolIds = [], onClose, 
 
   async function fetchTools(query) {
     setLoading(true)
-    let q = supabase
-      .from('user_tools')
-      .select('id, name, brand, model_number')
-      .order('name')
-      .limit(50)
-
-    if (query.length >= 2) {
-      q = q.or(`name.ilike.%${query}%,brand.ilike.%${query}%,model_number.ilike.%${query}%`)
+    try {
+      const params = new URLSearchParams()
+      if (query.length >= 2) params.set('search', query)
+      const qs = params.toString()
+      const data = await get('/tools' + (qs ? '?' + qs : ''))
+      setTools((data || []).slice(0, 50))
+    } catch {
+      setTools([])
     }
-
-    const { data } = await q
-    setTools(data || [])
     setLoading(false)
   }
 
@@ -52,8 +49,9 @@ export default function ToolPickerModal({ kitId, existingToolIds = [], onClose, 
     if (selected.size === 0) return
     setSaving(true)
 
-    const rows = [...selected].map((tool_id) => ({ kit_id: kitId, tool_id }))
-    await supabase.from('kit_tools').insert(rows)
+    for (const tool_id of selected) {
+      await post('/kits/' + kitId + '/tools', { tool_id })
+    }
 
     setSaving(false)
     onAdded()

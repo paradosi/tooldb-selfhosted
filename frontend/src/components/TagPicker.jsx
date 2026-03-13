@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, X, Check } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { get, post, del } from '../lib/api'
 
 const COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308', '#fde047',
@@ -62,8 +61,7 @@ const BRAND_TAGS = [
   { name: 'M18', color: '#db0032' },
 ]
 
-export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey = 'user_tool_id' }) {
-  const { user } = useAuth()
+export default function TagPicker({ itemId, itemType = 'tool' }) {
   const [allTags, setAllTags] = useState([])
   const [assignedTagIds, setAssignedTagIds] = useState(new Set())
   const [showCreate, setShowCreate] = useState(false)
@@ -71,6 +69,9 @@ export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey
   const [newColor, setNewColor] = useState('#3b82f6')
   const [showDropdown, setShowDropdown] = useState(false)
   const wrapperRef = useRef(null)
+
+  // Build endpoints based on item type
+  const itemPath = itemType === 'battery' ? '/batteries/' : '/tools/'
 
   useEffect(() => {
     if (!itemId) return
@@ -87,38 +88,26 @@ export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey
   }, [itemId])
 
   async function loadTags() {
-    const [tagsRes, assignedRes] = await Promise.all([
-      supabase
-        .from('user_tags')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('name'),
-      supabase
-        .from(table)
-        .select('tag_id')
-        .eq(foreignKey, itemId),
-    ])
-
-    if (tagsRes.data) setAllTags(tagsRes.data)
-    if (assignedRes.data) setAssignedTagIds(new Set(assignedRes.data.map((r) => r.tag_id)))
+    try {
+      const [tags, assigned] = await Promise.all([
+        get('/tags'),
+        get(itemPath + itemId + '/tags'),
+      ])
+      if (tags) setAllTags(tags)
+      if (assigned) setAssignedTagIds(new Set(assigned.map((r) => r.tag_id || r.id)))
+    } catch {}
   }
 
   async function toggleTag(tagId) {
     if (assignedTagIds.has(tagId)) {
-      await supabase
-        .from(table)
-        .delete()
-        .eq(foreignKey, itemId)
-        .eq('tag_id', tagId)
+      await del(itemPath + itemId + '/tags/' + tagId)
       setAssignedTagIds((prev) => {
         const next = new Set(prev)
         next.delete(tagId)
         return next
       })
     } else {
-      await supabase
-        .from(table)
-        .insert({ [foreignKey]: itemId, tag_id: tagId })
+      await post(itemPath + itemId + '/tags/' + tagId, {})
       setAssignedTagIds((prev) => new Set(prev).add(tagId))
     }
   }
@@ -126,21 +115,15 @@ export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey
   async function createTag() {
     if (!newName.trim()) return
 
-    const { data, error } = await supabase
-      .from('user_tags')
-      .insert({ user_id: user.id, name: newName.trim(), color: newColor })
-      .select()
-      .single()
-
-    if (error) return
-    if (data) {
-      setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-      // Auto-assign to current item
-      await supabase
-        .from(table)
-        .insert({ [foreignKey]: itemId, tag_id: data.id })
-      setAssignedTagIds((prev) => new Set(prev).add(data.id))
-    }
+    try {
+      const data = await post('/tags', { name: newName.trim(), color: newColor })
+      if (data) {
+        setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+        // Auto-assign to current item
+        await post(itemPath + itemId + '/tags/' + data.id, {})
+        setAssignedTagIds((prev) => new Set(prev).add(data.id))
+      }
+    } catch {}
 
     setNewName('')
     setNewColor('#3b82f6')
@@ -148,7 +131,7 @@ export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey
   }
 
   async function deleteTag(tagId) {
-    await supabase.from('user_tags').delete().eq('id', tagId)
+    await del('/tags/' + tagId)
     setAllTags((prev) => prev.filter((t) => t.id !== tagId))
     setAssignedTagIds((prev) => {
       const next = new Set(prev)
@@ -165,18 +148,14 @@ export default function TagPicker({ itemId, table = 'user_tool_tags', foreignKey
       return
     }
     // Create and assign
-    const { data, error } = await supabase
-      .from('user_tags')
-      .insert({ user_id: user.id, name: brand.name, color: brand.color })
-      .select()
-      .single()
-
-    if (error || !data) return
-    setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-    await supabase
-      .from(table)
-      .insert({ [foreignKey]: itemId, tag_id: data.id })
-    setAssignedTagIds((prev) => new Set(prev).add(data.id))
+    try {
+      const data = await post('/tags', { name: brand.name, color: brand.color })
+      if (data) {
+        setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+        await post(itemPath + itemId + '/tags/' + data.id, {})
+        setAssignedTagIds((prev) => new Set(prev).add(data.id))
+      }
+    } catch {}
   }
 
   if (!itemId) return null

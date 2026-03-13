@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
-import { ScanBarcode, X, Loader2, CheckCircle, AlertTriangle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { ScanBarcode, X, Loader2, AlertTriangle } from 'lucide-react'
 
 export default function UpcScanner({ onResult }) {
   const [open, setOpen] = useState(false)
@@ -82,34 +81,9 @@ export default function UpcScanner({ onResult }) {
 
     const upc = decodedText.trim()
 
-    // Look up in catalog
-    const { data, error: err } = await supabase
-      .from('tools')
-      .select('id, name, model_number, brands(name)')
-      .contains('upc', [upc])
-      .limit(1)
-      .single()
-
-    if (err || !data) {
-      // Not found in catalog — still return the UPC
-      setResult({ found: false, upc })
-      onResult({
-        upc,
-        catalog_tool_id: null,
-        name: '',
-        brand: '',
-        model_number: '',
-      })
-    } else {
-      setResult({ found: true, upc, tool: data })
-      onResult({
-        upc,
-        catalog_tool_id: data.id,
-        name: data.name,
-        brand: data.brands?.name || '',
-        model_number: data.model_number || '',
-      })
-    }
+    // No catalog lookup in self-hosted — just return the UPC
+    setResult({ upc })
+    onResult({ upc })
 
     setLooking(false)
   }
@@ -118,12 +92,8 @@ export default function UpcScanner({ onResult }) {
     const upc = prompt('Enter UPC barcode number:')
     if (!upc || !upc.trim()) return
 
-    setOpen(true)
-    setLooking(true)
-    setError(null)
-    setResult(null)
-
-    await handleScan(upc.trim())
+    setResult({ upc: upc.trim() })
+    onResult({ upc: upc.trim() })
   }
 
   if (!open) {
@@ -171,33 +141,19 @@ export default function UpcScanner({ onResult }) {
         {looking && (
           <div className="flex flex-col items-center gap-3 py-10">
             <Loader2 size={28} className="text-accent animate-spin" />
-            <p className="text-sm text-fg-muted">Looking up barcode...</p>
+            <p className="text-sm text-fg-muted">Processing barcode...</p>
           </div>
         )}
 
         {/* Result */}
         {result && !looking && (
           <div className="p-4">
-            {result.found ? (
-              <div className="flex items-start gap-3">
-                <CheckCircle size={20} className="text-ok flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-fg">{result.tool.name}</p>
-                  <p className="text-xs text-fg-muted">
-                    {[result.tool.brands?.name, result.tool.model_number].filter(Boolean).join(' · ')}
-                  </p>
-                  <p className="text-xs text-fg-faint mt-1">UPC: {result.upc}</p>
-                </div>
+            <div className="flex items-start gap-3">
+              <div>
+                <p className="text-sm font-medium text-fg">Barcode scanned</p>
+                <p className="text-xs text-fg-muted">UPC {result.upc} saved. Fill in details below.</p>
               </div>
-            ) : (
-              <div className="flex items-start gap-3">
-                <AlertTriangle size={20} className="text-warn flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-fg">Not found in catalog</p>
-                  <p className="text-xs text-fg-muted">UPC {result.upc} saved. Fill in details manually.</p>
-                </div>
-              </div>
-            )}
+            </div>
 
             <div className="flex gap-2 mt-4">
               <button

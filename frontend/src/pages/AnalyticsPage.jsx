@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { get } from '../lib/api'
 import {
   Wrench, Battery, DollarSign, ShieldAlert, ShieldCheck, ShieldX,
   UserCheck, Clock, Tag, MapPin, BarChart3,
@@ -10,35 +10,21 @@ export default function AnalyticsPage() {
   const [stats, setStats] = useState(null)
 
   useEffect(() => {
-    async function fetchAll(table, select) {
-      const PAGE = 1000
-      let all = []
-      let from = 0
-      while (true) {
-        const { data } = await supabase.from(table).select(select).range(from, from + PAGE - 1)
-        if (!data || data.length === 0) break
-        all = all.concat(data)
-        if (data.length < PAGE) break
-        from += PAGE
-      }
-      return all
-    }
-
     async function load() {
       const [tools, batteries] = await Promise.all([
-        fetchAll('user_tools', '*, user_tool_tags(tag_id, user_tags(id, name, color))'),
-        fetchAll('user_batteries', '*, user_battery_tags(tag_id, user_tags(id, name, color))'),
+        get('/tools'),
+        get('/batteries'),
       ])
-      const all = [...tools, ...batteries]
+      const all = [...(tools || []), ...(batteries || [])]
       const now = new Date()
 
       // Collection overview
       const totalValue = all.reduce((sum, i) => sum + (parseFloat(i.purchase_price) || 0), 0)
-      const toolsByBrand = countBy(tools, 'brand')
-      const toolsByType = countBy(tools, 'tool_type')
-      const toolsByLocation = countBy(tools, 'location')
-      const batteryByBrand = countBy(batteries, 'brand')
-      const batteryByPlatform = countBy(batteries, 'platform')
+      const toolsByBrand = countBy(tools || [], 'brand')
+      const toolsByType = countBy(tools || [], 'tool_type')
+      const toolsByLocation = countBy(tools || [], 'location')
+      const batteryByBrand = countBy(batteries || [], 'brand')
+      const batteryByPlatform = countBy(batteries || [], 'platform')
 
       // Warranty
       const withWarranty = all.filter((i) => i.warranty_expiry)
@@ -51,8 +37,8 @@ export default function AnalyticsPage() {
       const activeWarranty = withWarranty.filter((i) => new Date(i.warranty_expiry) >= now)
 
       // Lending
-      const lentTools = tools.filter((t) => t.lent_to)
-      const lentBatteries = batteries.filter((b) => b.lent_to)
+      const lentTools = (tools || []).filter((t) => t.lent_to)
+      const lentBatteries = (batteries || []).filter((b) => b.lent_to)
       const allLent = [...lentTools, ...lentBatteries]
       const lentByPerson = countBy(allLent, 'lent_to')
 
@@ -70,8 +56,8 @@ export default function AnalyticsPage() {
       }
 
       setStats({
-        toolCount: tools.length,
-        batteryCount: batteries.length,
+        toolCount: (tools || []).length,
+        batteryCount: (batteries || []).length,
         totalValue,
         toolsByBrand,
         toolsByType,

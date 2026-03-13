@@ -1,8 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { Wrench, Battery, Package, FileText, Settings, Sun, Moon, LogOut, Share2, BarChart3, HelpCircle } from 'lucide-react'
+import { Wrench, Battery, Package, FileText, Settings, Sun, Moon, LogOut, BarChart3 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import FeedbackButton from './FeedbackButton'
 
 const navItems = [
   { to: '/', icon: Wrench, label: 'Tools' },
@@ -16,19 +15,6 @@ const navItems = [
 export default function Sidebar() {
   const { dark, toggleTheme } = useTheme()
   const { signOut } = useAuth()
-
-  async function handleShare() {
-    const shareData = {
-      title: 'ToolDB',
-      text: 'Track your tool collection, store receipts, and export insurance reports.',
-      url: 'https://tooldb.app',
-    }
-    if (navigator.share) {
-      await navigator.share(shareData).catch(() => {})
-    } else {
-      await navigator.clipboard.writeText('https://tooldb.app')
-    }
-  }
 
   return (
     <aside className="hidden md:flex flex-col w-60 h-screen bg-card border-r border-bd sticky top-0">
@@ -64,26 +50,6 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-3 pb-6 space-y-1">
-        <a
-          href="https://docs.tooldb.io"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-fg-muted hover:text-fg hover:bg-bd transition-colors w-full"
-        >
-          <HelpCircle size={20} />
-          Help
-        </a>
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-fg-muted hover:text-fg hover:bg-bd transition-colors w-full">
-          <FeedbackButton />
-          <span className="cursor-pointer">Feedback</span>
-        </div>
-        <button
-          onClick={handleShare}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-fg-muted hover:text-fg hover:bg-bd transition-colors cursor-pointer w-full"
-        >
-          <Share2 size={20} />
-          Share ToolDB
-        </button>
         <button
           onClick={signOut}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-fg-muted hover:text-warn hover:bg-warn/10 transition-colors cursor-pointer w-full"

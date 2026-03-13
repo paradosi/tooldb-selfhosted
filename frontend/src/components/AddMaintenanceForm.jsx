@@ -1,13 +1,10 @@
 import { useState } from 'react'
 import { Plus, ChevronDown, ChevronUp } from 'lucide-react'
-import posthog from 'posthog-js'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../contexts/AuthContext'
+import { post } from '../lib/api'
 
 const TYPES = ['Service', 'Repair', 'Blade Change', 'Calibration', 'Cleaning', 'Other']
 
 export default function AddMaintenanceForm({ toolId, onAdded }) {
-  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -28,37 +25,27 @@ export default function AddMaintenanceForm({ toolId, onAdded }) {
     setSaving(true)
     setError(null)
 
-    const { error: err } = await supabase
-      .from('user_maintenance_logs')
-      .insert({
-        user_tool_id: toolId,
-        user_id: user.id,
+    try {
+      await post('/tools/' + toolId + '/maintenance', {
         date: form.date,
         type: form.type,
         cost: form.cost ? parseFloat(form.cost) : null,
         notes: form.notes || null,
       })
 
-    if (err) {
+      setForm({
+        date: new Date().toISOString().split('T')[0],
+        type: 'Service',
+        cost: '',
+        notes: '',
+      })
+      setSaving(false)
+      setOpen(false)
+      onAdded()
+    } catch (err) {
       setError(err.message)
       setSaving(false)
-      return
     }
-
-    posthog.capture('maintenance_log_added', {
-      tool_id: toolId,
-      maintenance_type: form.type,
-      has_cost: Boolean(form.cost),
-    })
-    setForm({
-      date: new Date().toISOString().split('T')[0],
-      type: 'Service',
-      cost: '',
-      notes: '',
-    })
-    setSaving(false)
-    setOpen(false)
-    onAdded()
   }
 
   return (

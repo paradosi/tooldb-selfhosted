@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, FileText, Image, Battery, UserCheck, Copy, HandHelping, Undo2, ShieldAlert } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { get, put, post, del } from '../lib/api'
 import PhotoGallery from '../components/PhotoGallery'
 
 export default function BatteryDetailPage() {
@@ -17,19 +17,13 @@ export default function BatteryDetailPage() {
   const [lending, setLending] = useState(false)
 
   const fetchBattery = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('user_batteries')
-      .select('*, user_battery_photos(*), user_battery_receipts(*), user_battery_tags(tag_id, user_tags(id, name, color))')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) {
+    try {
+      const data = await get('/batteries/' + id)
+      setBattery(data)
+      setLoading(false)
+    } catch {
       navigate('/batteries', { replace: true })
-      return
     }
-
-    setBattery(data)
-    setLoading(false)
   }, [id, navigate])
 
   useEffect(() => {
@@ -38,16 +32,14 @@ export default function BatteryDetailPage() {
 
   async function handleDelete() {
     setDeleting(true)
-    await supabase.from('user_batteries').delete().eq('id', id)
+    await del('/batteries/' + id)
     navigate('/batteries', { replace: true })
   }
 
   async function handleDuplicate() {
     setDuplicating(true)
-    const { data, error } = await supabase
-      .from('user_batteries')
-      .insert({
-        user_id: battery.user_id,
+    try {
+      const data = await post('/batteries', {
         name: battery.name,
         brand: battery.brand,
         platform: battery.platform,
@@ -67,22 +59,17 @@ export default function BatteryDetailPage() {
         custom_field_2_label: battery.custom_field_2_label,
         custom_field_2_value: battery.custom_field_2_value,
       })
-      .select()
-      .single()
-
-    if (!error && data) {
-      navigate(`/batteries/${data.id}/edit`)
-    }
+      if (data?.id) {
+        navigate(`/batteries/${data.id}/edit`)
+      }
+    } catch {}
     setDuplicating(false)
   }
 
   async function handleLend() {
     if (!lendName.trim()) return
     setLending(true)
-    await supabase
-      .from('user_batteries')
-      .update({ lent_to: lendName.trim(), lent_date: new Date().toISOString().slice(0, 10) })
-      .eq('id', id)
+    await put('/batteries/' + id, { lent_to: lendName.trim(), lent_date: new Date().toISOString().slice(0, 10) })
     setShowLendModal(false)
     setLendName('')
     setLending(false)
@@ -90,10 +77,7 @@ export default function BatteryDetailPage() {
   }
 
   async function handleReturn() {
-    await supabase
-      .from('user_batteries')
-      .update({ lent_to: null, lent_date: null })
-      .eq('id', id)
+    await put('/batteries/' + id, { lent_to: null, lent_date: null })
     fetchBattery()
   }
 

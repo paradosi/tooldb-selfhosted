@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { PlusCircle, Battery, Search, X, LayoutList, LayoutGrid, Upload, UserCheck } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 import useUserBatteries from '../hooks/useUserBatteries'
 import BatteryCard from '../components/BatteryCard'
 
@@ -11,9 +10,6 @@ export default function BatteryListPage() {
   const [brand, setBrand] = useState('')
   const [location, setLocation] = useState('')
   const [platform, setPlatform] = useState('')
-  const [brands, setBrands] = useState([])
-  const [locations, setLocations] = useState([])
-  const [platforms, setPlatforms] = useState([])
   const [lentOnly, setLentOnly] = useState(false)
   const [view, setView] = useState(() => localStorage.getItem('tooldb-battery-view') || 'list')
   const timerRef = useRef(null)
@@ -39,44 +35,20 @@ export default function BatteryListPage() {
     return () => clearTimeout(timerRef.current)
   }, [search])
 
-  useEffect(() => {
-    async function loadFilters() {
-      const [brandRes, locRes, platRes] = await Promise.all([
-        supabase
-          .from('user_batteries')
-          .select('brand')
-          .not('brand', 'is', null)
-          .not('brand', 'eq', '')
-          .order('brand')
-          .limit(10000),
-        supabase
-          .from('user_batteries')
-          .select('location')
-          .not('location', 'is', null)
-          .not('location', 'eq', '')
-          .order('location')
-          .limit(10000),
-        supabase
-          .from('user_batteries')
-          .select('platform')
-          .not('platform', 'is', null)
-          .not('platform', 'eq', '')
-          .order('platform')
-          .limit(10000),
-      ])
+  // Derive filter options from loaded batteries
+  const brands = useMemo(() => {
+    const set = new Set(batteries.map((b) => b.brand).filter(Boolean))
+    return [...set].sort()
+  }, [batteries])
 
-      if (brandRes.data) {
-        setBrands([...new Set(brandRes.data.map((r) => r.brand))])
-      }
-      if (locRes.data) {
-        setLocations([...new Set(locRes.data.map((r) => r.location))])
-      }
-      if (platRes.data) {
-        setPlatforms([...new Set(platRes.data.map((r) => r.platform))])
-      }
-    }
+  const locations = useMemo(() => {
+    const set = new Set(batteries.map((b) => b.location).filter(Boolean))
+    return [...set].sort()
+  }, [batteries])
 
-    loadFilters()
+  const platforms = useMemo(() => {
+    const set = new Set(batteries.map((b) => b.platform).filter(Boolean))
+    return [...set].sort()
   }, [batteries])
 
   const hasFilters = search || brand || location || platform || lentOnly
