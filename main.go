@@ -67,6 +67,21 @@ func main() {
 		api.AnalyticsRoutes(r)
 	})
 
+	// Serve React SPA from frontend/dist/
+	distDir := "frontend/dist"
+	fileServer := http.FileServer(http.Dir(distDir))
+
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		// Check if the requested file exists in dist/
+		path := filepath.Join(distDir, r.URL.Path)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// SPA fallback: serve index.html for all other routes
+		http.ServeFile(w, r, filepath.Join(distDir, "index.html"))
+	})
+
 	log.Printf("ToolDB listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))
 }
