@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/paradosi/tooldb-selfhosted/internal/api"
 	"github.com/paradosi/tooldb-selfhosted/internal/auth"
 	"github.com/paradosi/tooldb-selfhosted/internal/db"
 )
@@ -47,7 +48,7 @@ func main() {
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.Middleware)
 		r.Get("/auth/me", handleMe)
-		// Tool, battery, kit routes will be added in later tasks
+		api.ToolRoutes(r)
 	})
 
 	log.Printf("ToolDB listening on :%s", port)
