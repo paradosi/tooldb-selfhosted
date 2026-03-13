@@ -1,0 +1,5 @@
+data/
+*.db
+.env
+.git
+frontend/node_modules
