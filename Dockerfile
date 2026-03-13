@@ -20,6 +20,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=backend /app/tooldb-selfhosted .
+COPY --from=frontend /app/dist ./frontend/dist
 EXPOSE 8080
 VOLUME /data
 ENV DATA_DIR=/data
