@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { get } from '../lib/api'
 
 export default function useUserKits({ status = '' } = {}) {
   const [kits, setKits] = useState([])
@@ -9,28 +9,18 @@ export default function useUserKits({ status = '' } = {}) {
   const fetchKits = useCallback(async () => {
     setLoading(true)
     setError(null)
-
-    let query = supabase
-      .from('kits')
-      .select('*, kit_tools(id, checked)')
-      .order('updated_at', { ascending: false })
-
-    if (status) query = query.eq('status', status)
-
-    const { data, error: err } = await query
-
-    if (err) {
+    try {
+      const params = new URLSearchParams()
+      if (status) params.set('status', status)
+      const qs = params.toString()
+      const data = await get(`/kits${qs ? '?' + qs : ''}`)
+      setKits(data || [])
+    } catch (err) {
       setError(err.message)
-    } else {
-      setKits(data)
     }
-
     setLoading(false)
   }, [status])
 
-  useEffect(() => {
-    fetchKits()
-  }, [fetchKits])
-
+  useEffect(() => { fetchKits() }, [fetchKits])
   return { kits, loading, error, refetch: fetchKits }
 }
