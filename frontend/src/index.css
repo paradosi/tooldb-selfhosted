@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* Theme color tokens — light mode default, dark overrides */
+:root {
+  --surface: #ffffff;
+  --card: #f5f5f5;
+  --bd: #e5e7eb;
+  --bd-input: #d1d5db;
+  --fg: #111827;
+  --fg-secondary: #374151;
+  --fg-muted: #6b7280;
+  --fg-faint: #9ca3af;
+  --accent: #4a90e2;
+  --accent-hover: #3a80d2;
+  --warn: #F97316;
+  --ok: #10b981;
+  --overlay: rgba(0, 0, 0, 0.5);
+  --dropdown: #ffffff;
+}
+
+.dark {
+  --surface: #0f0f0f;
+  --card: #161616;
+  --bd: #222222;
+  --bd-input: #333333;
+  --fg: #ffffff;
+  --fg-secondary: #cccccc;
+  --fg-muted: #999999;
+  --fg-faint: #666666;
+  --overlay: rgba(0, 0, 0, 0.7);
+  --dropdown: #1a1a1a;
+}
+
+/* Register as Tailwind theme colors */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-bd: var(--bd);
+  --color-bd-input: var(--bd-input);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-faint: var(--fg-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+  --color-overlay: var(--overlay);
+  --color-dropdown: var(--dropdown);
+}
+
+body {
+  margin: 0;
+  background-color: var(--surface);
+  color: var(--fg);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Prevent iOS zoom on input focus (16px minimum) */
+input, select, textarea {
+  font-size: 16px;
+}
+
+/* Safe area for devices with notch/home indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

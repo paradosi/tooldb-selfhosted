@@ -3,3 +3,4 @@ dist/
 *.db
 .env
 tooldb-selfhosted
+frontend/node_modules/
