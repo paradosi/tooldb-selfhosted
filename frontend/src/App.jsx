@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './contexts/ThemeContext'
-import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import AuthPage from './pages/AuthPage'
@@ -17,22 +17,6 @@ import AnalyticsPage from './pages/AnalyticsPage'
 import KitListPage from './pages/KitListPage'
 import KitDetailPage from './pages/KitDetailPage'
 import AddKitPage from './pages/AddKitPage'
-import PrivacyPage from './pages/PrivacyPage'
-import LandingPage from './pages/LandingPage'
-
-function LandingRoute() {
-  const { user, loading } = useAuth()
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  return user ? <Navigate to="/tools" replace /> : <LandingPage />
-}
 
 function App() {
   return (
@@ -40,9 +24,8 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/" element={<LandingRoute />} />
+          <Route path="/" element={<Navigate to="/tools" replace />} />
           <Route path="/auth" element={<AuthPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
           <Route
             element={
               <ProtectedRoute>

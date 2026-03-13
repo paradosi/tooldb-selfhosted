@@ -1,9 +1,8 @@
 services:
   tooldb:
-    build: .
-    # image: ghcr.io/paradosi/tooldb-selfhosted:latest
+    image: ghcr.io/paradosi/tooldb-selfhosted:latest
     ports:
-      - "8080:8180"
+      - "8080:8080"
     volumes:
       - ./data:/data
     environment:

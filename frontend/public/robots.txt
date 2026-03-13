@@ -1,10 +1,2 @@
 User-agent: *
-Allow: /
-Disallow: /tools
-Disallow: /batteries
-Disallow: /settings
-Disallow: /analytics
-Disallow: /import
-Disallow: /export
-
-Sitemap: https://tooldb.app/sitemap.xml
+Disallow: /

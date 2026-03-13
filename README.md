@@ -5,6 +5,8 @@ A self-hosted tool inventory application. Track your tools, batteries, and equip
 ## Quick Start
 
 ```bash
+mkdir tooldb && cd tooldb
+curl -O https://raw.githubusercontent.com/paradosi/tooldb-selfhosted/main/docker-compose.yml
 docker compose up -d
 ```
 
@@ -56,7 +58,7 @@ By default, ToolDB uses SQLite (zero configuration, single file). To use Postgre
 ```yaml
 services:
   tooldb:
-    build: .
+    image: ghcr.io/paradosi/tooldb-selfhosted:latest
     ports:
       - "8080:8080"
     volumes:
