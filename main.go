@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -27,9 +28,18 @@ func main() {
 
 	auth.Init()
 
+	if err := api.InitUploadDirs(); err != nil {
+		log.Fatalf("Failed to create upload directories: %v", err)
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// Static file serving for uploads
+	dataDir := api.DataDir()
+	r.Handle("/photos/*", http.StripPrefix("/photos/", http.FileServer(http.Dir(filepath.Join(dataDir, "photos")))))
+	r.Handle("/receipts/*", http.StripPrefix("/receipts/", http.FileServer(http.Dir(filepath.Join(dataDir, "receipts")))))
 
 	// Public endpoints
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +60,7 @@ func main() {
 		r.Get("/auth/me", handleMe)
 		api.ToolRoutes(r)
 		api.BatteryRoutes(r)
+		api.UploadRoutes(r)
 	})
 
 	log.Printf("ToolDB listening on :%s", port)
