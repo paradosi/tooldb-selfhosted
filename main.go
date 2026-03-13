@@ -64,6 +64,7 @@ func main() {
 		api.MaintenanceRoutes(r)
 		api.TagRoutes(r)
 		api.KitRoutes(r)
+		api.AnalyticsRoutes(r)
 	})
 
 	log.Printf("ToolDB listening on :%s", port)
