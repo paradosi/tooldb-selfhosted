@@ -1,8 +1,9 @@
 package api
 
 import (
+	"bytes"
+	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,18 @@ import (
 	"github.com/paradosi/tooldb-selfhosted/internal/auth"
 	"github.com/paradosi/tooldb-selfhosted/internal/db"
 )
+
+// allowedUploadTypes is the closed allowlist of sniffed MIME types we store,
+// mapped to the extension written to disk. Anything not listed is rejected.
+// This prevents client-supplied .svg/.html (and forged Content-Type headers)
+// from being stored and then served from the app's own origin.
+var allowedUploadTypes = map[string]string{
+	"image/jpeg":      ".jpg",
+	"image/png":       ".png",
+	"image/gif":       ".gif",
+	"image/webp":      ".webp",
+	"application/pdf": ".pdf",
+}
 
 // DataDir returns the configured data directory.
 func DataDir() string {
@@ -273,20 +286,34 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 		return "", "", err
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		Error(w, 400, "missing file field")
 		return "", "", err
 	}
 	defer file.Close()
 
-	// Determine extension from content type, falling back to original filename
-	ext = extFromContentType(header.Header.Get("Content-Type"))
-	if ext == "" {
-		ext = strings.ToLower(filepath.Ext(header.Filename))
+	// Sniff the real type from the file's magic bytes; never trust the
+	// client-supplied Content-Type or filename extension.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		Error(w, 400, "failed to read file")
+		return "", "", err
 	}
-	if ext == "" {
-		ext = ".bin"
+	head = head[:n]
+
+	ct := http.DetectContentType(head)
+	// DetectContentType does not reliably identify webp, so check its
+	// RIFF/WEBP magic bytes explicitly.
+	if len(head) >= 12 && bytes.Equal(head[0:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")) {
+		ct = "image/webp"
+	}
+
+	ext, ok := allowedUploadTypes[ct]
+	if !ok {
+		Error(w, 415, "unsupported file type")
+		return "", "", fmt.Errorf("unsupported content type %q", ct)
 	}
 
 	id := NewUUID()
@@ -300,6 +327,13 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	}
 	defer out.Close()
 
+	// Write the sniffed prefix first, then stream the remainder, so the
+	// buffered head isn't lost.
+	if _, err := out.Write(head); err != nil {
+		os.Remove(dst)
+		Error(w, 500, "failed to write file")
+		return "", "", err
+	}
 	if _, err := io.Copy(out, file); err != nil {
 		os.Remove(dst)
 		Error(w, 500, "failed to write file")
@@ -307,24 +341,6 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	}
 
 	return fname, ext, nil
-}
-
-func extFromContentType(ct string) string {
-	if ct == "" {
-		return ""
-	}
-	// Use mime package for standard mappings
-	exts, _ := mime.ExtensionsByType(ct)
-	if len(exts) > 0 {
-		// Prefer common extensions
-		for _, e := range exts {
-			if e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".gif" || e == ".webp" || e == ".pdf" {
-				return e
-			}
-		}
-		return exts[0]
-	}
-	return ""
 }
 
 func removeFile(url string) {
