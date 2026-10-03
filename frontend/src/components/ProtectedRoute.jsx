@@ -13,7 +13,9 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (!user) {
-    return <Navigate to="/" replace />
+    // Not "/" — that route redirects to /tools, which is itself protected, so
+    // the two bounce off each other forever.
+    return <Navigate to="/auth" replace />
   }
 
   return children
