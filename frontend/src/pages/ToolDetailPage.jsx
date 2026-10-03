@@ -266,12 +266,13 @@ export default function ToolDetailPage() {
                 rel="noopener noreferrer"
                 className="flex items-center gap-3 bg-surface border border-bd rounded-lg px-4 py-3 hover:border-bd-input transition-colors"
               >
-                {receipt.file_type === 'application/pdf' ? (
+                {String(receipt.file_type || '').toLowerCase().includes('pdf') ? (
                   <FileText size={18} className="text-warn flex-shrink-0" />
                 ) : (
                   <Image size={18} className="text-accent flex-shrink-0" />
                 )}
-                <span className="text-sm text-fg">{receipt.label}</span>
+                <span className="text-sm text-fg">{receipt.name || receipt.label}</span>
+                {receipt.name && <span className="text-xs text-fg-faint">{receipt.label}</span>}
                 <span className="text-xs text-fg-faint ml-auto">View</span>
               </a>
             ))}
