@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileText, Image, Trash2, Upload, Loader2 } from 'lucide-react'
 import { get, del, upload } from '../lib/api'
 
-const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Other']
+const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Parts List', 'Other']
 
 export default function BatteryReceiptUpload({ batteryId }) {
   const [receipts, setReceipts] = useState([])
