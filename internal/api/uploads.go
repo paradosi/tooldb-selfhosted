@@ -59,6 +59,12 @@ func UploadToolPhoto(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
 
+	// Reject uploads aimed at another user's tool before any file is written.
+	if !ownsRow("tools", toolID, userID) {
+		Error(w, 404, "tool not found")
+		return
+	}
+
 	filename, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return // error already written
@@ -86,6 +92,11 @@ func UploadToolPhoto(w http.ResponseWriter, r *http.Request) {
 func UploadToolReceipt(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
+
+	if !ownsRow("tools", toolID, userID) {
+		Error(w, 404, "tool not found")
+		return
+	}
 
 	filename, ext, err := saveUpload(w, r, "receipts")
 	if err != nil {
@@ -116,6 +127,12 @@ func UploadBatteryPhoto(w http.ResponseWriter, r *http.Request) {
 	batteryID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
 
+	// Reject uploads aimed at another user's battery before any file is written.
+	if !ownsRow("batteries", batteryID, userID) {
+		Error(w, 404, "battery not found")
+		return
+	}
+
 	filename, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return
@@ -143,6 +160,11 @@ func UploadBatteryPhoto(w http.ResponseWriter, r *http.Request) {
 func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 	batteryID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
+
+	if !ownsRow("batteries", batteryID, userID) {
+		Error(w, 404, "battery not found")
+		return
+	}
 
 	filename, ext, err := saveUpload(w, r, "receipts")
 	if err != nil {
@@ -371,4 +393,25 @@ func collectMediaURLs(query string, args ...interface{}) []string {
 		}
 	}
 	return urls
+}
+
+// ownsRow reports whether the given row id belongs to the authenticated user.
+// Upload handlers call it before writing any file, so a caller can't attach
+// media to someone else's tool/battery. The table name is an allowlisted
+// literal from our own call sites, never user input.
+func ownsRow(table, id, userID string) bool {
+	var q string
+	switch table {
+	case "tools":
+		q = `SELECT COUNT(1) FROM tools WHERE id = ? AND user_id = ?`
+	case "batteries":
+		q = `SELECT COUNT(1) FROM batteries WHERE id = ? AND user_id = ?`
+	default:
+		return false
+	}
+	var n int
+	if err := db.DB.QueryRow(q, id, userID).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
 }
