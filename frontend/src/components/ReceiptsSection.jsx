@@ -7,6 +7,12 @@ const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Parts Lis
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
 
+// file_type stores the sniffed extension (".pdf"), not a MIME type, so match
+// loosely: older or future rows may hold either form.
+function isPdf(receipt) {
+  return String(receipt.file_type || '').toLowerCase().includes('pdf')
+}
+
 export default function ReceiptsSection({ resource, ownerId }) {
   const [receipts, setReceipts] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -116,7 +122,7 @@ export default function ReceiptsSection({ resource, ownerId }) {
               key={receipt.id}
               className="flex items-center gap-3 bg-surface border border-bd rounded-lg px-4 py-3"
             >
-              {receipt.file_type === 'application/pdf' ? (
+              {isPdf(receipt) ? (
                 <FileText size={20} className="text-warn flex-shrink-0" />
               ) : (
                 <Image size={20} className="text-accent flex-shrink-0" />
@@ -145,7 +151,7 @@ export default function ReceiptsSection({ resource, ownerId }) {
                   </button>
                 )}
                 <p className="text-xs text-fg-faint">
-                  {receipt.label} · {receipt.file_type === 'application/pdf' ? 'PDF' : 'Image'}
+                  {receipt.label} · {isPdf(receipt) ? 'PDF' : 'Image'}
                 </p>
               </div>
 
