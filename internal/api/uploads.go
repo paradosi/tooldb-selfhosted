@@ -411,13 +411,24 @@ func receiptByID(table, id, userID string) map[string]interface{} {
 
 // --- internal helpers ---
 
+// MaxUploadBytes is the per-file upload limit, enforced here and in the browser.
+// Keep in sync with MAX_UPLOAD_BYTES in frontend/src/lib/uploadLimits.js.
+const MaxUploadBytes = 50 << 20 // 50 MiB
+
+// maxBodyBytes is the request-body cap. It is deliberately larger than
+// MaxUploadBytes so the multipart envelope around the file is never what
+// rejects an upload — previously the body cap and the browser's file-size check
+// were the same number, so a file of exactly the advertised size passed
+// validation in the browser and was then bounced by the server.
+const maxBodyBytes = MaxUploadBytes + (1 << 20)
+
 // saveUpload reads the multipart "file" field, writes it to disk under subdir, and returns the
 // generated filename, extension, and the client's original filename.
 // On error it writes the HTTP response and returns a non-nil error.
 func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename string, ext string, origName string, err error) {
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		Error(w, 400, "file too large or invalid multipart")
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if err := r.ParseMultipartForm(maxBodyBytes); err != nil {
+		Error(w, 413, "file too large or invalid multipart")
 		return "", "", "", err
 	}
 
@@ -427,6 +438,13 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 		return "", "", "", err
 	}
 	defer file.Close()
+
+	// Checked against the same number the browser uses, so the two cannot
+	// disagree about what "too big" means.
+	if header.Size > MaxUploadBytes {
+		Error(w, 413, "file too large")
+		return "", "", "", fmt.Errorf("file is %d bytes, limit is %d", header.Size, MaxUploadBytes)
+	}
 
 	// Sniff the real type from the file's magic bytes; never trust the
 	// client-supplied Content-Type or filename extension.

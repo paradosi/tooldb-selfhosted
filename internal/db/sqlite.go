@@ -18,7 +18,12 @@ func initSQLite() error {
 
 	dbPath := filepath.Join(dataDir, "tooldb.db")
 	var err error
-	DB, err = sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
+	// modernc.org/sqlite does NOT understand mattn-style `_journal_mode=` /
+	// `_foreign_keys=` DSN parameters; it only honours `_pragma=<name>(<value>)`.
+	// With the old syntax none of these were applied: foreign keys stayed OFF,
+	// so deleting a tool left its receipts and photos behind as orphaned rows.
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	DB, err = sql.Open("sqlite", dsn)
 	if err != nil {
 		return err
 	}

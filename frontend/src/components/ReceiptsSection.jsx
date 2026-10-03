@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileText, Image, Trash2, Upload, Loader2 } from 'lucide-react'
 import { get, del, put, upload } from '../lib/api'
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  DOCUMENT_TYPES,
+  DOCUMENT_TYPE_ERROR,
+} from '../lib/uploadLimits'
 
 const LABEL_OPTIONS = ['Purchase receipt', 'Warranty card', 'Manual', 'Parts List', 'Other']
-
-const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
 
 // file_type stores the sniffed extension (".pdf"), not a MIME type, so match
 // loosely: older or future rows may hold either form.
@@ -44,11 +47,11 @@ export default function ReceiptsSection({ resource, ownerId }) {
     setError(null)
 
     try {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        throw new Error('Only JPEG, PNG, WebP, and PDF files are allowed.')
+      if (!DOCUMENT_TYPES.includes(file.type)) {
+        throw new Error(DOCUMENT_TYPE_ERROR)
       }
-      if (file.size > MAX_SIZE) {
-        throw new Error('File must be under 10 MB.')
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error(`File must be under ${MAX_UPLOAD_LABEL}.`)
       }
       // Upload receipt with label as query param
       await upload('/' + resource + '/' + ownerId + '/receipts?label=' + encodeURIComponent(label), file)
