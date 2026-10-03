@@ -17,6 +17,10 @@ type contextKey string
 
 const UserIDKey contextKey = "user_id"
 
+// CookieName is the cookie that carries the JWT. It exists so media <img>/<a>
+// tags, which cannot set an Authorization header, can still authenticate.
+const CookieName = "tooldb-token"
+
 var (
 	jwtSecret []byte
 	Enabled   bool
@@ -70,13 +74,19 @@ func Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		header := r.Header.Get("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") {
+		// Accept the token from either the Authorization header (API clients)
+		// or the cookie (browser media/asset requests).
+		var tokenStr string
+		if header := r.Header.Get("Authorization"); strings.HasPrefix(header, "Bearer ") {
+			tokenStr = strings.TrimPrefix(header, "Bearer ")
+		} else if c, err := r.Cookie(CookieName); err == nil {
+			tokenStr = c.Value
+		}
+		if tokenStr == "" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := strings.TrimPrefix(header, "Bearer ")
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 			return jwtSecret, nil
 		})
