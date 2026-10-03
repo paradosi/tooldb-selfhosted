@@ -178,6 +178,12 @@ func UpdateBattery(w http.ResponseWriter, r *http.Request) {
 func DeleteBattery(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
+
+	// Collect media URLs before the cascade drops the rows, then remove the
+	// files from disk after a successful delete.
+	photos := collectMediaURLs(`SELECT url FROM battery_photos WHERE battery_id = ? AND user_id = ?`, id, userID)
+	receipts := collectMediaURLs(`SELECT url FROM battery_receipts WHERE battery_id = ? AND user_id = ?`, id, userID)
+
 	res, err := db.DB.Exec("DELETE FROM batteries WHERE id = ? AND user_id = ?", id, userID)
 	if err != nil {
 		Error(w, 500, err.Error())
@@ -186,6 +192,12 @@ func DeleteBattery(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		Error(w, 404, "battery not found")
 		return
+	}
+	for _, u := range photos {
+		removeFile(u)
+	}
+	for _, u := range receipts {
+		removeFile(u)
 	}
 	w.WriteHeader(204)
 }

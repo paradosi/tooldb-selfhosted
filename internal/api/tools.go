@@ -176,6 +176,12 @@ func UpdateTool(w http.ResponseWriter, r *http.Request) {
 func DeleteTool(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
+
+	// Collect media URLs before the cascade drops the rows, then remove the
+	// files from disk after a successful delete.
+	photos := collectMediaURLs(`SELECT url FROM tool_photos WHERE tool_id = ? AND user_id = ?`, id, userID)
+	receipts := collectMediaURLs(`SELECT url FROM tool_receipts WHERE tool_id = ? AND user_id = ?`, id, userID)
+
 	res, err := db.DB.Exec("DELETE FROM tools WHERE id = ? AND user_id = ?", id, userID)
 	if err != nil {
 		Error(w, 500, err.Error())
@@ -184,6 +190,12 @@ func DeleteTool(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		Error(w, 404, "tool not found")
 		return
+	}
+	for _, u := range photos {
+		removeFile(u)
+	}
+	for _, u := range receipts {
+		removeFile(u)
 	}
 	w.WriteHeader(204)
 }

@@ -353,3 +353,22 @@ func removeFile(url string) {
 	path := filepath.Join(DataDir(), rel)
 	os.Remove(path)
 }
+
+// collectMediaURLs returns the url column of a query. It lets a delete handler
+// gather a row's media files before the DB cascade removes the rows, since the
+// cascade only touches rows, never the files on disk.
+func collectMediaURLs(query string, args ...interface{}) []string {
+	rows, err := db.DB.Query(query, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var urls []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			urls = append(urls, u)
+		}
+	}
+	return urls
+}
