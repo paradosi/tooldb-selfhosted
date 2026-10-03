@@ -12,11 +12,25 @@ export async function api(path, options = {}) {
     headers: getHeaders(),
     ...options,
   })
+
   if (res.status === 401) {
     localStorage.removeItem('tooldb-token')
-    window.location.href = '/auth'
-    return
+
+    // A 401 from the auth endpoints is an ordinary "wrong credentials" answer
+    // — including the empty-credentials probe AuthContext sends on load to
+    // detect whether auth is enabled at all. Hard-navigating on those reloads
+    // the login page, which probes again, and loops forever. Only treat a 401
+    // as an expired session (and redirect) when it is not an auth call and we
+    // are not already sitting on the login page.
+    const isAuthCall = path.startsWith('/auth/')
+    if (!isAuthCall && window.location.pathname !== '/auth') {
+      window.location.href = '/auth'
+    }
+
+    const err = await res.json().catch(() => ({ error: 'unauthorized' }))
+    throw new Error(err.error || 'unauthorized')
   }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || res.statusText)
