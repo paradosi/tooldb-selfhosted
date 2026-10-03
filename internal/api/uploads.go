@@ -1,8 +1,9 @@
 package api
 
 import (
+	"bytes"
+	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,18 @@ import (
 	"github.com/paradosi/tooldb-selfhosted/internal/auth"
 	"github.com/paradosi/tooldb-selfhosted/internal/db"
 )
+
+// allowedUploadTypes is the closed allowlist of sniffed MIME types we store,
+// mapped to the extension written to disk. Anything not listed is rejected.
+// This prevents client-supplied .svg/.html (and forged Content-Type headers)
+// from being stored and then served from the app's own origin.
+var allowedUploadTypes = map[string]string{
+	"image/jpeg":      ".jpg",
+	"image/png":       ".png",
+	"image/gif":       ".gif",
+	"image/webp":      ".webp",
+	"application/pdf": ".pdf",
+}
 
 // DataDir returns the configured data directory.
 func DataDir() string {
@@ -46,6 +59,12 @@ func UploadToolPhoto(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
 
+	// Reject uploads aimed at another user's tool before any file is written.
+	if !ownsRow("tools", toolID, userID) {
+		Error(w, 404, "tool not found")
+		return
+	}
+
 	filename, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return // error already written
@@ -73,6 +92,11 @@ func UploadToolPhoto(w http.ResponseWriter, r *http.Request) {
 func UploadToolReceipt(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
+
+	if !ownsRow("tools", toolID, userID) {
+		Error(w, 404, "tool not found")
+		return
+	}
 
 	filename, ext, err := saveUpload(w, r, "receipts")
 	if err != nil {
@@ -103,6 +127,12 @@ func UploadBatteryPhoto(w http.ResponseWriter, r *http.Request) {
 	batteryID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
 
+	// Reject uploads aimed at another user's battery before any file is written.
+	if !ownsRow("batteries", batteryID, userID) {
+		Error(w, 404, "battery not found")
+		return
+	}
+
 	filename, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return
@@ -131,6 +161,11 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 	batteryID := chi.URLParam(r, "id")
 	userID := auth.GetUserID(r)
 
+	if !ownsRow("batteries", batteryID, userID) {
+		Error(w, 404, "battery not found")
+		return
+	}
+
 	filename, ext, err := saveUpload(w, r, "receipts")
 	if err != nil {
 		return
@@ -158,21 +193,22 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 // DeletePhoto handles DELETE /api/photos/{id}
 func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	// Try tool_photos first
 	var url string
-	err := db.DB.QueryRow(`SELECT url FROM tool_photos WHERE id = ?`, id).Scan(&url)
+	err := db.DB.QueryRow(`SELECT url FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM tool_photos WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
 	}
 
 	// Try battery_photos
-	err = db.DB.QueryRow(`SELECT url FROM battery_photos WHERE id = ?`, id).Scan(&url)
+	err = db.DB.QueryRow(`SELECT url FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM battery_photos WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
@@ -184,21 +220,22 @@ func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 // DeleteReceipt handles DELETE /api/receipts/{id}
 func DeleteReceipt(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	// Try tool_receipts first
 	var url string
-	err := db.DB.QueryRow(`SELECT url FROM tool_receipts WHERE id = ?`, id).Scan(&url)
+	err := db.DB.QueryRow(`SELECT url FROM tool_receipts WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM tool_receipts WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM tool_receipts WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
 	}
 
 	// Try battery_receipts
-	err = db.DB.QueryRow(`SELECT url FROM battery_receipts WHERE id = ?`, id).Scan(&url)
+	err = db.DB.QueryRow(`SELECT url FROM battery_receipts WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM battery_receipts WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM battery_receipts WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
@@ -210,6 +247,7 @@ func DeleteReceipt(w http.ResponseWriter, r *http.Request) {
 // UpdatePhoto handles PUT /api/photos/{id} — update rotation and is_primary
 func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	var body struct {
 		Rotation  *int  `json:"rotation"`
@@ -222,10 +260,10 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 
 	// Determine which table this photo belongs to
 	var toolID string
-	err := db.DB.QueryRow(`SELECT tool_id FROM tool_photos WHERE id = ?`, id).Scan(&toolID)
+	err := db.DB.QueryRow(`SELECT tool_id FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&toolID)
 	if err == nil {
 		if body.IsPrimary != nil && *body.IsPrimary {
-			db.DB.Exec(`UPDATE tool_photos SET is_primary = 0 WHERE tool_id = ?`, toolID)
+			db.DB.Exec(`UPDATE tool_photos SET is_primary = 0 WHERE tool_id = ? AND user_id = ?`, toolID, userID)
 		}
 		rotation := 0
 		if body.Rotation != nil {
@@ -235,16 +273,16 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 		if body.IsPrimary != nil && *body.IsPrimary {
 			isPrimary = 1
 		}
-		db.DB.Exec(`UPDATE tool_photos SET rotation = ?, is_primary = ? WHERE id = ?`, rotation, isPrimary, id)
+		db.DB.Exec(`UPDATE tool_photos SET rotation = ?, is_primary = ? WHERE id = ? AND user_id = ?`, rotation, isPrimary, id, userID)
 		JSON(w, 200, map[string]interface{}{"id": id, "rotation": rotation, "is_primary": isPrimary == 1})
 		return
 	}
 
 	var batteryID string
-	err = db.DB.QueryRow(`SELECT battery_id FROM battery_photos WHERE id = ?`, id).Scan(&batteryID)
+	err = db.DB.QueryRow(`SELECT battery_id FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&batteryID)
 	if err == nil {
 		if body.IsPrimary != nil && *body.IsPrimary {
-			db.DB.Exec(`UPDATE battery_photos SET is_primary = 0 WHERE battery_id = ?`, batteryID)
+			db.DB.Exec(`UPDATE battery_photos SET is_primary = 0 WHERE battery_id = ? AND user_id = ?`, batteryID, userID)
 		}
 		rotation := 0
 		if body.Rotation != nil {
@@ -254,7 +292,7 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 		if body.IsPrimary != nil && *body.IsPrimary {
 			isPrimary = 1
 		}
-		db.DB.Exec(`UPDATE battery_photos SET rotation = ?, is_primary = ? WHERE id = ?`, rotation, isPrimary, id)
+		db.DB.Exec(`UPDATE battery_photos SET rotation = ?, is_primary = ? WHERE id = ? AND user_id = ?`, rotation, isPrimary, id, userID)
 		JSON(w, 200, map[string]interface{}{"id": id, "rotation": rotation, "is_primary": isPrimary == 1})
 		return
 	}
@@ -273,20 +311,34 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 		return "", "", err
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		Error(w, 400, "missing file field")
 		return "", "", err
 	}
 	defer file.Close()
 
-	// Determine extension from content type, falling back to original filename
-	ext = extFromContentType(header.Header.Get("Content-Type"))
-	if ext == "" {
-		ext = strings.ToLower(filepath.Ext(header.Filename))
+	// Sniff the real type from the file's magic bytes; never trust the
+	// client-supplied Content-Type or filename extension.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		Error(w, 400, "failed to read file")
+		return "", "", err
 	}
-	if ext == "" {
-		ext = ".bin"
+	head = head[:n]
+
+	ct := http.DetectContentType(head)
+	// DetectContentType does not reliably identify webp, so check its
+	// RIFF/WEBP magic bytes explicitly.
+	if len(head) >= 12 && bytes.Equal(head[0:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")) {
+		ct = "image/webp"
+	}
+
+	ext, ok := allowedUploadTypes[ct]
+	if !ok {
+		Error(w, 415, "unsupported file type")
+		return "", "", fmt.Errorf("unsupported content type %q", ct)
 	}
 
 	id := NewUUID()
@@ -300,6 +352,13 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	}
 	defer out.Close()
 
+	// Write the sniffed prefix first, then stream the remainder, so the
+	// buffered head isn't lost.
+	if _, err := out.Write(head); err != nil {
+		os.Remove(dst)
+		Error(w, 500, "failed to write file")
+		return "", "", err
+	}
 	if _, err := io.Copy(out, file); err != nil {
 		os.Remove(dst)
 		Error(w, 500, "failed to write file")
@@ -309,28 +368,50 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	return fname, ext, nil
 }
 
-func extFromContentType(ct string) string {
-	if ct == "" {
-		return ""
-	}
-	// Use mime package for standard mappings
-	exts, _ := mime.ExtensionsByType(ct)
-	if len(exts) > 0 {
-		// Prefer common extensions
-		for _, e := range exts {
-			if e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".gif" || e == ".webp" || e == ".pdf" {
-				return e
-			}
-		}
-		return exts[0]
-	}
-	return ""
-}
-
 func removeFile(url string) {
 	// url is like /photos/uuid.jpg or /receipts/uuid.pdf
 	// Strip leading slash and join with DataDir
 	rel := strings.TrimPrefix(url, "/")
 	path := filepath.Join(DataDir(), rel)
 	os.Remove(path)
+}
+
+// collectMediaURLs returns the url column of a query. It lets a delete handler
+// gather a row's media files before the DB cascade removes the rows, since the
+// cascade only touches rows, never the files on disk.
+func collectMediaURLs(query string, args ...interface{}) []string {
+	rows, err := db.DB.Query(query, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var urls []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			urls = append(urls, u)
+		}
+	}
+	return urls
+}
+
+// ownsRow reports whether the given row id belongs to the authenticated user.
+// Upload handlers call it before writing any file, so a caller can't attach
+// media to someone else's tool/battery. The table name is an allowlisted
+// literal from our own call sites, never user input.
+func ownsRow(table, id, userID string) bool {
+	var q string
+	switch table {
+	case "tools":
+		q = `SELECT COUNT(1) FROM tools WHERE id = ? AND user_id = ?`
+	case "batteries":
+		q = `SELECT COUNT(1) FROM batteries WHERE id = ? AND user_id = ?`
+	default:
+		return false
+	}
+	var n int
+	if err := db.DB.QueryRow(q, id, userID).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
 }

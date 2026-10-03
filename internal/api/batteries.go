@@ -117,13 +117,14 @@ func CreateBattery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the created battery
-	battery := getBatteryByID(id)
+	battery := getBatteryByID(id, userID)
 	JSON(w, 201, battery)
 }
 
 func GetBattery(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	battery := getBatteryByID(id)
+	userID := auth.GetUserID(r)
+	battery := getBatteryByID(id, userID)
 	if battery == nil {
 		Error(w, 404, "battery not found")
 		return
@@ -133,6 +134,7 @@ func GetBattery(w http.ResponseWriter, r *http.Request) {
 
 func UpdateBattery(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 	var body map[string]interface{}
 	if err := ParseBody(r, &body); err != nil {
 		Error(w, 400, "invalid request body")
@@ -140,14 +142,14 @@ func UpdateBattery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := Now()
-	_, err := db.DB.Exec(`UPDATE batteries SET
+	res, err := db.DB.Exec(`UPDATE batteries SET
 		name = ?, brand = ?, platform = ?, model_number = ?, serial_number = ?, voltage = ?, capacity_ah = ?,
 		purchase_date = ?, purchase_price = ?, retailer = ?, warranty_expiry = ?,
 		condition = ?, location = ?, notes = ?, lent_to = ?, lent_date = ?,
 		custom_field_1_label = ?, custom_field_1_value = ?,
 		custom_field_2_label = ?, custom_field_2_value = ?,
 		updated_at = ?
-		WHERE id = ?`,
+		WHERE id = ? AND user_id = ?`,
 		strVal(body, "name"), strVal(body, "brand"), strVal(body, "platform"),
 		strVal(body, "model_number"), strVal(body, "serial_number"),
 		strVal(body, "voltage"), strVal(body, "capacity_ah"),
@@ -157,23 +159,45 @@ func UpdateBattery(w http.ResponseWriter, r *http.Request) {
 		strVal(body, "notes"), strVal(body, "lent_to"), strVal(body, "lent_date"),
 		strVal(body, "custom_field_1_label"), strVal(body, "custom_field_1_value"),
 		strVal(body, "custom_field_2_label"), strVal(body, "custom_field_2_value"),
-		now, id)
+		now, id, userID)
 
 	if err != nil {
 		Error(w, 500, err.Error())
 		return
 	}
+	// Not found or owned by another user: 404 so ids stay unenumerable.
+	if n, _ := res.RowsAffected(); n == 0 {
+		Error(w, 404, "battery not found")
+		return
+	}
 
-	battery := getBatteryByID(id)
+	battery := getBatteryByID(id, userID)
 	JSON(w, 200, battery)
 }
 
 func DeleteBattery(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	_, err := db.DB.Exec("DELETE FROM batteries WHERE id = ?", id)
+	userID := auth.GetUserID(r)
+
+	// Collect media URLs before the cascade drops the rows, then remove the
+	// files from disk after a successful delete.
+	photos := collectMediaURLs(`SELECT url FROM battery_photos WHERE battery_id = ? AND user_id = ?`, id, userID)
+	receipts := collectMediaURLs(`SELECT url FROM battery_receipts WHERE battery_id = ? AND user_id = ?`, id, userID)
+
+	res, err := db.DB.Exec("DELETE FROM batteries WHERE id = ? AND user_id = ?", id, userID)
 	if err != nil {
 		Error(w, 500, err.Error())
 		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		Error(w, 404, "battery not found")
+		return
+	}
+	for _, u := range photos {
+		removeFile(u)
+	}
+	for _, u := range receipts {
+		removeFile(u)
 	}
 	w.WriteHeader(204)
 }
@@ -203,7 +227,7 @@ func scanBattery(rows *sql.Rows) map[string]interface{} {
 		"brand": nullStr(brand), "platform": nullStr(platform),
 		"model_number": nullStr(modelNumber), "serial_number": nullStr(serialNumber),
 		"voltage": nullStr(voltage), "capacity_ah": nullStr(capacityAh),
-		"purchase_date": nullStr(purchaseDate),
+		"purchase_date":  nullStr(purchaseDate),
 		"purchase_price": nullFloat(purchasePrice), "retailer": nullStr(retailer),
 		"warranty_expiry": nullStr(warrantyExpiry), "condition": nullStr(condition),
 		"location": nullStr(location), "notes": nullStr(notes),
@@ -214,14 +238,14 @@ func scanBattery(rows *sql.Rows) map[string]interface{} {
 	}
 }
 
-func getBatteryByID(id string) map[string]interface{} {
+func getBatteryByID(id, userID string) map[string]interface{} {
 	rows, err := db.DB.Query(`SELECT id, name, brand, platform, model_number, serial_number, voltage, capacity_ah,
 		purchase_date, purchase_price, retailer, warranty_expiry, condition,
 		location, notes, lent_to, lent_date,
 		custom_field_1_label, custom_field_1_value,
 		custom_field_2_label, custom_field_2_value,
 		created_at, updated_at
-		FROM batteries WHERE id = ?`, id)
+		FROM batteries WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -36,10 +37,15 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// Static file serving for uploads
+	// Uploaded media is protected too. The SPA renders these with <img>/<a> tags
+	// that cannot send an Authorization header, so they authenticate via the
+	// auth cookie set at login.
 	dataDir := api.DataDir()
-	r.Handle("/photos/*", http.StripPrefix("/photos/", http.FileServer(http.Dir(filepath.Join(dataDir, "photos")))))
-	r.Handle("/receipts/*", http.StripPrefix("/receipts/", http.FileServer(http.Dir(filepath.Join(dataDir, "receipts")))))
+	r.Group(func(r chi.Router) {
+		r.Use(auth.Middleware)
+		r.Handle("/photos/*", http.StripPrefix("/photos/", mediaHandler(filepath.Join(dataDir, "photos"))))
+		r.Handle("/receipts/*", http.StripPrefix("/receipts/", mediaHandler(filepath.Join(dataDir, "receipts"))))
+	})
 
 	// Public endpoints
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +98,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !auth.Enabled {
 		// Auth disabled — return default token
 		token, _ := auth.GenerateToken("default")
+		setAuthCookie(w, r, token)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"token": token,
 			"user":  map[string]string{"id": "default", "username": "admin"},
@@ -119,9 +126,42 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookie(w, r, token)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"token": token,
 		"user":  map[string]string{"id": body.Username, "username": body.Username},
+	})
+}
+
+// setAuthCookie stores the JWT in a cookie so media <img>/<a> requests, which
+// cannot set an Authorization header, are authenticated. MaxAge matches the
+// 7-day token expiry; Secure is only set when the request is already TLS.
+func setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.CookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+}
+
+// mediaHandler serves uploaded files with hardened headers: sniffing is always
+// disabled so a stored file can't be reinterpreted as HTML/SVG, and non-image
+// types (pdf) are forced to download rather than render inline.
+func mediaHandler(dir string) http.Handler {
+	fs := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		switch strings.ToLower(filepath.Ext(r.URL.Path)) {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+			// images stay inline
+		default:
+			w.Header().Set("Content-Disposition", "attachment")
+		}
+		fs.ServeHTTP(w, r)
 	})
 }
 

@@ -116,13 +116,14 @@ func CreateTool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the created tool
-	tool := getToolByID(id)
+	tool := getToolByID(id, userID)
 	JSON(w, 201, tool)
 }
 
 func GetTool(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	tool := getToolByID(id)
+	userID := auth.GetUserID(r)
+	tool := getToolByID(id, userID)
 	if tool == nil {
 		Error(w, 404, "tool not found")
 		return
@@ -132,6 +133,7 @@ func GetTool(w http.ResponseWriter, r *http.Request) {
 
 func UpdateTool(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 	var body map[string]interface{}
 	if err := ParseBody(r, &body); err != nil {
 		Error(w, 400, "invalid request body")
@@ -139,14 +141,14 @@ func UpdateTool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := Now()
-	_, err := db.DB.Exec(`UPDATE tools SET
+	res, err := db.DB.Exec(`UPDATE tools SET
 		name = ?, brand = ?, model_number = ?, serial_number = ?, upc = ?, tool_type = ?,
 		purchase_date = ?, purchase_price = ?, retailer = ?, warranty_expiry = ?,
 		condition = ?, location = ?, notes = ?, lent_to = ?, lent_date = ?,
 		custom_field_1_label = ?, custom_field_1_value = ?,
 		custom_field_2_label = ?, custom_field_2_value = ?,
 		updated_at = ?
-		WHERE id = ?`,
+		WHERE id = ? AND user_id = ?`,
 		strVal(body, "name"), strVal(body, "brand"), strVal(body, "model_number"),
 		strVal(body, "serial_number"), strVal(body, "upc"), strVal(body, "tool_type"),
 		strVal(body, "purchase_date"), numVal(body, "purchase_price"),
@@ -155,23 +157,45 @@ func UpdateTool(w http.ResponseWriter, r *http.Request) {
 		strVal(body, "notes"), strVal(body, "lent_to"), strVal(body, "lent_date"),
 		strVal(body, "custom_field_1_label"), strVal(body, "custom_field_1_value"),
 		strVal(body, "custom_field_2_label"), strVal(body, "custom_field_2_value"),
-		now, id)
+		now, id, userID)
 
 	if err != nil {
 		Error(w, 500, err.Error())
 		return
 	}
+	// Not found or owned by another user: 404 so ids stay unenumerable.
+	if n, _ := res.RowsAffected(); n == 0 {
+		Error(w, 404, "tool not found")
+		return
+	}
 
-	tool := getToolByID(id)
+	tool := getToolByID(id, userID)
 	JSON(w, 200, tool)
 }
 
 func DeleteTool(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	_, err := db.DB.Exec("DELETE FROM tools WHERE id = ?", id)
+	userID := auth.GetUserID(r)
+
+	// Collect media URLs before the cascade drops the rows, then remove the
+	// files from disk after a successful delete.
+	photos := collectMediaURLs(`SELECT url FROM tool_photos WHERE tool_id = ? AND user_id = ?`, id, userID)
+	receipts := collectMediaURLs(`SELECT url FROM tool_receipts WHERE tool_id = ? AND user_id = ?`, id, userID)
+
+	res, err := db.DB.Exec("DELETE FROM tools WHERE id = ? AND user_id = ?", id, userID)
 	if err != nil {
 		Error(w, 500, err.Error())
 		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		Error(w, 404, "tool not found")
+		return
+	}
+	for _, u := range photos {
+		removeFile(u)
+	}
+	for _, u := range receipts {
+		removeFile(u)
 	}
 	w.WriteHeader(204)
 }
@@ -211,14 +235,14 @@ func scanTool(rows *sql.Rows) map[string]interface{} {
 	}
 }
 
-func getToolByID(id string) map[string]interface{} {
+func getToolByID(id, userID string) map[string]interface{} {
 	rows, err := db.DB.Query(`SELECT id, name, brand, model_number, serial_number, upc, tool_type,
 		purchase_date, purchase_price, retailer, warranty_expiry, condition,
 		location, notes, lent_to, lent_date,
 		custom_field_1_label, custom_field_1_value,
 		custom_field_2_label, custom_field_2_value,
 		created_at, updated_at
-		FROM tools WHERE id = ?`, id)
+		FROM tools WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return nil
 	}
