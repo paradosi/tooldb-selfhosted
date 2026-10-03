@@ -282,7 +282,7 @@ func getToolPhotos(toolID string) []map[string]interface{} {
 }
 
 func getToolReceipts(toolID string) []map[string]interface{} {
-	rows, err := db.DB.Query(`SELECT id, url, file_type, label, uploaded_at FROM tool_receipts WHERE tool_id = ? ORDER BY uploaded_at ASC`, toolID)
+	rows, err := db.DB.Query(`SELECT id, url, file_type, label, name, uploaded_at FROM tool_receipts WHERE tool_id = ? ORDER BY uploaded_at ASC`, toolID)
 	if err != nil {
 		return []map[string]interface{}{}
 	}
@@ -290,9 +290,10 @@ func getToolReceipts(toolID string) []map[string]interface{} {
 	receipts := []map[string]interface{}{}
 	for rows.Next() {
 		var id, url, fileType, label, uploadedAt string
-		rows.Scan(&id, &url, &fileType, &label, &uploadedAt)
+		var name sql.NullString
+		rows.Scan(&id, &url, &fileType, &label, &name, &uploadedAt)
 		receipts = append(receipts, map[string]interface{}{
-			"id": id, "url": url, "file_type": fileType, "label": label, "uploaded_at": uploadedAt,
+			"id": id, "url": url, "file_type": fileType, "label": label, "name": nullStr(name), "uploaded_at": uploadedAt,
 		})
 	}
 	return receipts
