@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import useAutosave from '../hooks/useAutosave'
 import UpcScanner from '../components/UpcScanner'
 import PhotoUpload from '../components/PhotoUpload'
-import ReceiptUpload from '../components/ReceiptUpload'
+import ReceiptsSection from '../components/ReceiptsSection'
 import TagPicker from '../components/TagPicker'
 import ImportCSV from '../components/ImportCSV'
 
@@ -359,7 +359,7 @@ export default function AddToolPage() {
         )}
 
         {isEdit && <PhotoUpload toolId={id} />}
-        {isEdit && <ReceiptUpload toolId={id} />}
+        {isEdit && <ReceiptsSection resource="tools" ownerId={id} />}
 
         {error && (
           <div className="bg-warn/10 border border-warn/30 rounded-lg p-4">
