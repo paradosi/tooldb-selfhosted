@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Camera, Star, Trash2, Loader2, RotateCw } from 'lucide-react'
 import { get, put, del, upload } from '../lib/api'
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  IMAGE_TYPES,
+  IMAGE_TYPE_ERROR,
+} from '../lib/uploadLimits'
 
 export default function PhotoUpload({ toolId }) {
   const [photos, setPhotos] = useState([])
@@ -20,8 +26,6 @@ export default function PhotoUpload({ toolId }) {
   }
 
   const MAX_PHOTOS = 5
-  const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
   const atLimit = photos.length >= MAX_PHOTOS
 
@@ -41,11 +45,11 @@ export default function PhotoUpload({ toolId }) {
 
     try {
       for (const file of files) {
-        if (!ALLOWED_TYPES.includes(file.type)) {
-          throw new Error(`${file.name}: Only JPEG, PNG, and WebP files are allowed.`)
+        if (!IMAGE_TYPES.includes(file.type)) {
+          throw new Error(`${file.name}: ${IMAGE_TYPE_ERROR}`)
         }
-        if (file.size > MAX_SIZE) {
-          throw new Error(`${file.name}: File must be under 10 MB.`)
+        if (file.size > MAX_UPLOAD_BYTES) {
+          throw new Error(`${file.name}: File must be under ${MAX_UPLOAD_LABEL}.`)
         }
         await upload('/tools/' + toolId + '/photos', file)
       }
