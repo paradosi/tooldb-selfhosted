@@ -171,21 +171,22 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 // DeletePhoto handles DELETE /api/photos/{id}
 func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	// Try tool_photos first
 	var url string
-	err := db.DB.QueryRow(`SELECT url FROM tool_photos WHERE id = ?`, id).Scan(&url)
+	err := db.DB.QueryRow(`SELECT url FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM tool_photos WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
 	}
 
 	// Try battery_photos
-	err = db.DB.QueryRow(`SELECT url FROM battery_photos WHERE id = ?`, id).Scan(&url)
+	err = db.DB.QueryRow(`SELECT url FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM battery_photos WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
@@ -197,21 +198,22 @@ func DeletePhoto(w http.ResponseWriter, r *http.Request) {
 // DeleteReceipt handles DELETE /api/receipts/{id}
 func DeleteReceipt(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	// Try tool_receipts first
 	var url string
-	err := db.DB.QueryRow(`SELECT url FROM tool_receipts WHERE id = ?`, id).Scan(&url)
+	err := db.DB.QueryRow(`SELECT url FROM tool_receipts WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM tool_receipts WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM tool_receipts WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
 	}
 
 	// Try battery_receipts
-	err = db.DB.QueryRow(`SELECT url FROM battery_receipts WHERE id = ?`, id).Scan(&url)
+	err = db.DB.QueryRow(`SELECT url FROM battery_receipts WHERE id = ? AND user_id = ?`, id, userID).Scan(&url)
 	if err == nil {
-		db.DB.Exec(`DELETE FROM battery_receipts WHERE id = ?`, id)
+		db.DB.Exec(`DELETE FROM battery_receipts WHERE id = ? AND user_id = ?`, id, userID)
 		removeFile(url)
 		w.WriteHeader(204)
 		return
@@ -223,6 +225,7 @@ func DeleteReceipt(w http.ResponseWriter, r *http.Request) {
 // UpdatePhoto handles PUT /api/photos/{id} — update rotation and is_primary
 func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
 
 	var body struct {
 		Rotation  *int  `json:"rotation"`
@@ -235,10 +238,10 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 
 	// Determine which table this photo belongs to
 	var toolID string
-	err := db.DB.QueryRow(`SELECT tool_id FROM tool_photos WHERE id = ?`, id).Scan(&toolID)
+	err := db.DB.QueryRow(`SELECT tool_id FROM tool_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&toolID)
 	if err == nil {
 		if body.IsPrimary != nil && *body.IsPrimary {
-			db.DB.Exec(`UPDATE tool_photos SET is_primary = 0 WHERE tool_id = ?`, toolID)
+			db.DB.Exec(`UPDATE tool_photos SET is_primary = 0 WHERE tool_id = ? AND user_id = ?`, toolID, userID)
 		}
 		rotation := 0
 		if body.Rotation != nil {
@@ -248,16 +251,16 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 		if body.IsPrimary != nil && *body.IsPrimary {
 			isPrimary = 1
 		}
-		db.DB.Exec(`UPDATE tool_photos SET rotation = ?, is_primary = ? WHERE id = ?`, rotation, isPrimary, id)
+		db.DB.Exec(`UPDATE tool_photos SET rotation = ?, is_primary = ? WHERE id = ? AND user_id = ?`, rotation, isPrimary, id, userID)
 		JSON(w, 200, map[string]interface{}{"id": id, "rotation": rotation, "is_primary": isPrimary == 1})
 		return
 	}
 
 	var batteryID string
-	err = db.DB.QueryRow(`SELECT battery_id FROM battery_photos WHERE id = ?`, id).Scan(&batteryID)
+	err = db.DB.QueryRow(`SELECT battery_id FROM battery_photos WHERE id = ? AND user_id = ?`, id, userID).Scan(&batteryID)
 	if err == nil {
 		if body.IsPrimary != nil && *body.IsPrimary {
-			db.DB.Exec(`UPDATE battery_photos SET is_primary = 0 WHERE battery_id = ?`, batteryID)
+			db.DB.Exec(`UPDATE battery_photos SET is_primary = 0 WHERE battery_id = ? AND user_id = ?`, batteryID, userID)
 		}
 		rotation := 0
 		if body.Rotation != nil {
@@ -267,7 +270,7 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 		if body.IsPrimary != nil && *body.IsPrimary {
 			isPrimary = 1
 		}
-		db.DB.Exec(`UPDATE battery_photos SET rotation = ?, is_primary = ? WHERE id = ?`, rotation, isPrimary, id)
+		db.DB.Exec(`UPDATE battery_photos SET rotation = ?, is_primary = ? WHERE id = ? AND user_id = ?`, rotation, isPrimary, id, userID)
 		JSON(w, 200, map[string]interface{}{"id": id, "rotation": rotation, "is_primary": isPrimary == 1})
 		return
 	}
