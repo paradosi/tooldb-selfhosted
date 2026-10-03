@@ -284,7 +284,7 @@ func getBatteryPhotos(batteryID string) []map[string]interface{} {
 }
 
 func getBatteryReceipts(batteryID string) []map[string]interface{} {
-	rows, err := db.DB.Query(`SELECT id, url, file_type, label, uploaded_at FROM battery_receipts WHERE battery_id = ? ORDER BY uploaded_at ASC`, batteryID)
+	rows, err := db.DB.Query(`SELECT id, url, file_type, label, name, uploaded_at FROM battery_receipts WHERE battery_id = ? ORDER BY uploaded_at ASC`, batteryID)
 	if err != nil {
 		return []map[string]interface{}{}
 	}
@@ -292,9 +292,10 @@ func getBatteryReceipts(batteryID string) []map[string]interface{} {
 	receipts := []map[string]interface{}{}
 	for rows.Next() {
 		var id, url, fileType, label, uploadedAt string
-		rows.Scan(&id, &url, &fileType, &label, &uploadedAt)
+		var name sql.NullString
+		rows.Scan(&id, &url, &fileType, &label, &name, &uploadedAt)
 		receipts = append(receipts, map[string]interface{}{
-			"id": id, "url": url, "file_type": fileType, "label": label, "uploaded_at": uploadedAt,
+			"id": id, "url": url, "file_type": fileType, "label": label, "name": nullStr(name), "uploaded_at": uploadedAt,
 		})
 	}
 	return receipts

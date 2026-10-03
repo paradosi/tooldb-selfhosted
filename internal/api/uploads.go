@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,13 +46,36 @@ func InitUploadDirs() error {
 }
 
 func UploadRoutes(r chi.Router) {
+	r.Get("/tools/{id}/receipts", ListToolReceipts)
 	r.Post("/tools/{id}/photos", UploadToolPhoto)
 	r.Post("/tools/{id}/receipts", UploadToolReceipt)
+	r.Get("/batteries/{id}/receipts", ListBatteryReceipts)
 	r.Post("/batteries/{id}/photos", UploadBatteryPhoto)
 	r.Post("/batteries/{id}/receipts", UploadBatteryReceipt)
 	r.Delete("/photos/{id}", DeletePhoto)
 	r.Delete("/receipts/{id}", DeleteReceipt)
 	r.Put("/photos/{id}", UpdatePhoto)
+	r.Put("/receipts/{id}", UpdateReceipt)
+}
+
+// ListToolReceipts handles GET /api/tools/{id}/receipts
+func ListToolReceipts(w http.ResponseWriter, r *http.Request) {
+	toolID := chi.URLParam(r, "id")
+	if !ownsRow("tools", toolID, auth.GetUserID(r)) {
+		Error(w, 404, "tool not found")
+		return
+	}
+	JSON(w, 200, getToolReceipts(toolID))
+}
+
+// ListBatteryReceipts handles GET /api/batteries/{id}/receipts
+func ListBatteryReceipts(w http.ResponseWriter, r *http.Request) {
+	batteryID := chi.URLParam(r, "id")
+	if !ownsRow("batteries", batteryID, auth.GetUserID(r)) {
+		Error(w, 404, "battery not found")
+		return
+	}
+	JSON(w, 200, getBatteryReceipts(batteryID))
 }
 
 // UploadToolPhoto handles POST /api/tools/{id}/photos
@@ -65,7 +89,7 @@ func UploadToolPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename, _, err := saveUpload(w, r, "photos")
+	filename, _, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return // error already written
 	}
@@ -98,7 +122,7 @@ func UploadToolReceipt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename, ext, err := saveUpload(w, r, "receipts")
+	filename, ext, origName, err := saveUpload(w, r, "receipts")
 	if err != nil {
 		return
 	}
@@ -107,10 +131,11 @@ func UploadToolReceipt(w http.ResponseWriter, r *http.Request) {
 	now := Now()
 	url := "/receipts/" + filename
 	label := r.FormValue("label")
+	name := receiptName(r, origName)
 
-	_, err = db.DB.Exec(`INSERT INTO tool_receipts (id, tool_id, user_id, url, file_type, label, uploaded_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, toolID, userID, url, ext, label, now)
+	_, err = db.DB.Exec(`INSERT INTO tool_receipts (id, tool_id, user_id, url, file_type, label, name, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, toolID, userID, url, ext, label, name, now)
 	if err != nil {
 		os.Remove(filepath.Join(DataDir(), "receipts", filename))
 		Error(w, 500, err.Error())
@@ -118,7 +143,7 @@ func UploadToolReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, 201, map[string]interface{}{
-		"id": id, "url": url, "file_type": ext, "label": label, "uploaded_at": now,
+		"id": id, "url": url, "file_type": ext, "label": label, "name": name, "uploaded_at": now,
 	})
 }
 
@@ -133,7 +158,7 @@ func UploadBatteryPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename, _, err := saveUpload(w, r, "photos")
+	filename, _, _, err := saveUpload(w, r, "photos")
 	if err != nil {
 		return
 	}
@@ -166,7 +191,7 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename, ext, err := saveUpload(w, r, "receipts")
+	filename, ext, origName, err := saveUpload(w, r, "receipts")
 	if err != nil {
 		return
 	}
@@ -175,10 +200,11 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 	now := Now()
 	url := "/receipts/" + filename
 	label := r.FormValue("label")
+	name := receiptName(r, origName)
 
-	_, err = db.DB.Exec(`INSERT INTO battery_receipts (id, battery_id, user_id, url, file_type, label, uploaded_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, batteryID, userID, url, ext, label, now)
+	_, err = db.DB.Exec(`INSERT INTO battery_receipts (id, battery_id, user_id, url, file_type, label, name, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, batteryID, userID, url, ext, label, name, now)
 	if err != nil {
 		os.Remove(filepath.Join(DataDir(), "receipts", filename))
 		Error(w, 500, err.Error())
@@ -186,7 +212,7 @@ func UploadBatteryReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, 201, map[string]interface{}{
-		"id": id, "url": url, "file_type": ext, "label": label, "uploaded_at": now,
+		"id": id, "url": url, "file_type": ext, "label": label, "name": name, "uploaded_at": now,
 	})
 }
 
@@ -300,21 +326,105 @@ func UpdatePhoto(w http.ResponseWriter, r *http.Request) {
 	Error(w, 404, "photo not found")
 }
 
+// UpdateReceipt handles PUT /api/receipts/{id} — rename an uploaded document
+// and/or change its category label. Either field may be omitted, but at least
+// one is expected. The row may live in tool_receipts or battery_receipts, so
+// mirror DeleteReceipt and probe both.
+func UpdateReceipt(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := auth.GetUserID(r)
+
+	var body struct {
+		Name  *string `json:"name"`
+		Label *string `json:"label"`
+	}
+	if err := ParseBody(r, &body); err != nil {
+		Error(w, 400, "invalid request body")
+		return
+	}
+	if body.Name == nil && body.Label == nil {
+		Error(w, 400, "nothing to update")
+		return
+	}
+
+	var name string
+	if body.Name != nil {
+		name = strings.TrimSpace(*body.Name)
+		if len([]rune(name)) > 200 {
+			Error(w, 400, "name too long")
+			return
+		}
+	}
+
+	table, ok := findReceiptTable(id, userID)
+	if !ok {
+		Error(w, 404, "receipt not found")
+		return
+	}
+
+	if body.Name != nil {
+		if _, err := db.DB.Exec(`UPDATE `+table+` SET name = ? WHERE id = ? AND user_id = ?`, name, id, userID); err != nil {
+			Error(w, 500, err.Error())
+			return
+		}
+	}
+	if body.Label != nil {
+		if _, err := db.DB.Exec(`UPDATE `+table+` SET label = ? WHERE id = ? AND user_id = ?`, *body.Label, id, userID); err != nil {
+			Error(w, 500, err.Error())
+			return
+		}
+	}
+
+	receipt := receiptByID(table, id, userID)
+	if receipt == nil {
+		Error(w, 404, "receipt not found")
+		return
+	}
+	JSON(w, 200, receipt)
+}
+
+// findReceiptTable reports which of the two receipt tables owns the row, scoped
+// by user so another user's id is neither updated nor disclosed.
+func findReceiptTable(id, userID string) (string, bool) {
+	for _, table := range []string{"tool_receipts", "battery_receipts"} {
+		var got string
+		if err := db.DB.QueryRow(`SELECT id FROM `+table+` WHERE id = ? AND user_id = ?`, id, userID).Scan(&got); err == nil {
+			return table, true
+		}
+	}
+	return "", false
+}
+
+func receiptByID(table, id, userID string) map[string]interface{} {
+	var rid, url, fileType, uploadedAt string
+	var label, name sql.NullString
+	err := db.DB.QueryRow(`SELECT id, url, file_type, label, name, uploaded_at FROM `+table+` WHERE id = ? AND user_id = ?`, id, userID).
+		Scan(&rid, &url, &fileType, &label, &name, &uploadedAt)
+	if err != nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"id": rid, "url": url, "file_type": fileType,
+		"label": nullStr(label), "name": nullStr(name), "uploaded_at": uploadedAt,
+	}
+}
+
 // --- internal helpers ---
 
-// saveUpload reads the multipart "file" field, writes it to disk under subdir, and returns the filename and extension.
+// saveUpload reads the multipart "file" field, writes it to disk under subdir, and returns the
+// generated filename, extension, and the client's original filename.
 // On error it writes the HTTP response and returns a non-nil error.
-func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename string, ext string, err error) {
+func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename string, ext string, origName string, err error) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		Error(w, 400, "file too large or invalid multipart")
-		return "", "", err
+		return "", "", "", err
 	}
 
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		Error(w, 400, "missing file field")
-		return "", "", err
+		return "", "", "", err
 	}
 	defer file.Close()
 
@@ -324,7 +434,7 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	n, err := io.ReadFull(file, head)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		Error(w, 400, "failed to read file")
-		return "", "", err
+		return "", "", "", err
 	}
 	head = head[:n]
 
@@ -338,7 +448,7 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	ext, ok := allowedUploadTypes[ct]
 	if !ok {
 		Error(w, 415, "unsupported file type")
-		return "", "", fmt.Errorf("unsupported content type %q", ct)
+		return "", "", "", fmt.Errorf("unsupported content type %q", ct)
 	}
 
 	id := NewUUID()
@@ -348,7 +458,7 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	out, err := os.Create(dst)
 	if err != nil {
 		Error(w, 500, "failed to create file")
-		return "", "", err
+		return "", "", "", err
 	}
 	defer out.Close()
 
@@ -357,15 +467,30 @@ func saveUpload(w http.ResponseWriter, r *http.Request, subdir string) (filename
 	if _, err := out.Write(head); err != nil {
 		os.Remove(dst)
 		Error(w, 500, "failed to write file")
-		return "", "", err
+		return "", "", "", err
 	}
 	if _, err := io.Copy(out, file); err != nil {
 		os.Remove(dst)
 		Error(w, 500, "failed to write file")
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return fname, ext, nil
+	return fname, ext, header.Filename, nil
+}
+
+// receiptName picks the stored document name: an explicit "name" form value
+// when supplied, otherwise the original upload filename (the only label the
+// user gave). Capped at 200 characters so a pathological filename can't bloat
+// the row.
+func receiptName(r *http.Request, origName string) string {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = strings.TrimSpace(origName)
+	}
+	if runes := []rune(name); len(runes) > 200 {
+		name = string(runes[:200])
+	}
+	return name
 }
 
 func removeFile(url string) {

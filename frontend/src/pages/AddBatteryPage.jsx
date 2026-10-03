@@ -5,7 +5,7 @@ import { get, post, put } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import useAutosave from '../hooks/useAutosave'
 import BatteryPhotoUpload from '../components/BatteryPhotoUpload'
-import BatteryReceiptUpload from '../components/BatteryReceiptUpload'
+import ReceiptsSection from '../components/ReceiptsSection'
 import TagPicker from '../components/TagPicker'
 
 const EMPTY_FORM = {
@@ -309,7 +309,7 @@ export default function AddBatteryPage() {
         )}
 
         {isEdit && <BatteryPhotoUpload batteryId={id} />}
-        {isEdit && <BatteryReceiptUpload batteryId={id} />}
+        {isEdit && <ReceiptsSection resource="batteries" ownerId={id} />}
 
         {error && (
           <div className="bg-warn/10 border border-warn/30 rounded-lg p-4">

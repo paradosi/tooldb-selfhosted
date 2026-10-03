@@ -40,7 +40,7 @@ func postFile(t *testing.T, subdir, filename, declaredType string, content []byt
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 
-	fname, _, _ := saveUpload(rec, req, subdir)
+	fname, _, _, _ := saveUpload(rec, req, subdir)
 	return rec, fname
 }
 
