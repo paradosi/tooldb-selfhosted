@@ -7,6 +7,7 @@ import (
 )
 
 func initPostgres(url string) error {
+	engine = "postgres"
 	var err error
 	DB, err = sql.Open("pgx", url)
 	if err != nil {

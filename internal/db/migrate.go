@@ -1,6 +1,13 @@
 package db
 
-import "log"
+import (
+	"database/sql"
+	"log"
+)
+
+// engine records which SQL backend Init() selected, so ensureColumn can use the
+// right schema-introspection query. Set by initSQLite/initPostgres.
+var engine string
 
 func migrate() error {
 	schema := `
@@ -81,6 +88,7 @@ func migrate() error {
 		url TEXT NOT NULL,
 		file_type TEXT DEFAULT 'image/jpeg',
 		label TEXT DEFAULT 'Purchase receipt',
+		name TEXT,
 		uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -101,6 +109,7 @@ func migrate() error {
 		url TEXT NOT NULL,
 		file_type TEXT DEFAULT 'image/jpeg',
 		label TEXT DEFAULT 'Purchase receipt',
+		name TEXT,
 		uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -160,6 +169,63 @@ func migrate() error {
 		log.Printf("Migration error: %v", err)
 		return err
 	}
+
+	// CREATE TABLE IF NOT EXISTS is a no-op on a database that already exists,
+	// so a column added to the schema above never reaches a live DB. Apply such
+	// columns explicitly; ensureColumn is idempotent and safe to run every boot.
+	if err := ensureColumn("tool_receipts", "name", "name TEXT"); err != nil {
+		return err
+	}
+	if err := ensureColumn("battery_receipts", "name", "name TEXT"); err != nil {
+		return err
+	}
+
 	log.Println("Database migrated successfully")
 	return nil
+}
+
+// ensureColumn adds a column to an existing table only when it is missing.
+// SQLite and Postgres expose their schemas differently, so it branches on the
+// engine marker set at init. table/column/ddl are allowlisted literals from our
+// own call sites, never user input.
+func ensureColumn(table, column, ddl string) error {
+	exists, err := columnExists(table, column)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	if _, err := DB.Exec("ALTER TABLE " + table + " ADD COLUMN " + ddl); err != nil {
+		log.Printf("Migration error adding %s.%s: %v", table, column, err)
+		return err
+	}
+	return nil
+}
+
+func columnExists(table, column string) (bool, error) {
+	if engine == "postgres" {
+		var n int
+		err := DB.QueryRow(`SELECT COUNT(1) FROM information_schema.columns
+			WHERE table_name = ? AND column_name = ?`, table, column).Scan(&n)
+		return n > 0, err
+	}
+
+	rows, err := DB.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, colType string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

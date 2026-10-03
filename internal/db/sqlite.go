@@ -9,6 +9,7 @@ import (
 )
 
 func initSQLite() error {
+	engine = "sqlite"
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
 		dataDir = "./data"
